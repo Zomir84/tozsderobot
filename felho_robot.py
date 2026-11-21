@@ -7,8 +7,8 @@ from alpaca.trading.requests import MarketOrderRequest, StopLossRequest, GetOrde
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderClass, QueryOrderStatus
 
 # 1. Kulcsok biztonságos beolvasása a GitHub Secrets-ből
-API_KEY = os.environ["ALPACA_API_KEY"]
-SECRET_KEY = os.environ["ALPACA_SECRET_KEY"]
+API_KEY = os.environ["ALPACA_API_KEY"].strip()
+SECRET_KEY = os.environ["ALPACA_SECRET_KEY"].strip()
 
 SZIMBOLUM = "NVDA"
 DARABSZAM = 5
