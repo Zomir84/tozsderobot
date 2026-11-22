@@ -401,7 +401,7 @@
       <div class="live-chart-wrap"><canvas id="livePriceChart"></canvas></div>
       <div class="chart-legend" id="liveChartLegend" style="display: none;">
         <span><i class="legend-dot" style="background: #60a5fa;"></i>Bekerülés</span>
-        <span><i class="legend-dot" style="background: #ef4444;"></i>Stop-Loss (-6%)</span>
+        <span><i class="legend-dot" style="background: #ef4444;"></i><span id="slLegendLabel">Stop-Loss (-6%)</span></span>
       </div>
     </div>
 
@@ -484,7 +484,7 @@
           <div class="ind-hint" id="rsiHint">-</div>
         </div>
         <div class="ind-box">
-          <div class="ind-name">Stop-Loss (-6%)</div>
+          <div class="ind-name" id="slBoxName">Stop-Loss (-6%)</div>
           <div class="ind-val" id="slVal">-</div>
           <div class="ind-hint" id="slHint">-</div>
         </div>
@@ -494,6 +494,19 @@
 
   <!-- 2. FÜL: DIAGRAMOK -->
   <section id="tab-charts" class="tab-view">
+    <div class="card">
+      <div class="chart-header">
+        <div class="chart-meta">
+          <div class="section-title">📈 Saját profit-görbe (Equity)</div>
+          <div class="chart-change" id="equityMeta">Adatok betöltése...</div>
+        </div>
+      </div>
+      <div class="live-chart-wrap"><canvas id="equityChart"></canvas></div>
+      <div class="chart-legend">
+        <span><i class="legend-dot" style="background: #10b981;"></i>Portfólió ($)</span>
+        <span><i class="legend-dot" style="background: #94a3b8;"></i>Induló tőke</span>
+      </div>
+    </div>
     <div class="card">
       <div class="section-title">Portfólió megoszlás (USDT vs. SOL)</div>
       <div class="chart-wrap"><canvas id="portfolioChart"></canvas></div>
@@ -574,6 +587,8 @@
       entry_time: null,
       entry_size: 0.2187,
       entry_cost_usdt: 15.39,
+      highest_price: null,
+      trailing_active: false,
       stop_loss_price: 66.14,
       stop_loss_pct: 6.0,
       profit_pct: -1.68,
@@ -592,9 +607,11 @@
     };
 
     let currentData = FALLBACK;
+    let historyData = [];
     let currentTf = '1d';
     let charts = {};
     let liveChart = null;
+    let equityChart = null;
 
     function getRevConfig() {
       const startCap = parseFloat(localStorage.getItem('pionex_start_cap'));
@@ -620,6 +637,9 @@
       if (!isNaN(fee) && fee >= 0) localStorage.setItem('pionex_rev_fee', fee.toString());
       document.getElementById('revSettingsBox').classList.remove('open');
       updateRevolutCard(currentData);
+      if (document.getElementById('tab-charts').classList.contains('active')) {
+        renderEquityChart();
+      }
     }
 
     function updateRevolutCard(d) {
@@ -679,6 +699,7 @@
       btn.classList.add('active');
       if (name === 'charts') {
         renderCharts(currentData);
+        renderEquityChart();
       }
     }
 
@@ -743,6 +764,9 @@
         const legendEl = document.getElementById('liveChartLegend');
         if (currentData.has_position && currentData.entry_price) {
           legendEl.style.display = 'flex';
+          document.getElementById('slLegendLabel').textContent = currentData.trailing_active
+            ? 'Követő SL (aktív)'
+            : `Stop-Loss (-${currentData.stop_loss_pct || 6}%)`;
           datasets.push({
             label: 'Bekerülés ($)',
             data: Array(prices.length).fill(currentData.entry_price),
@@ -754,7 +778,7 @@
           });
           if (currentData.stop_loss_price) {
             datasets.push({
-              label: 'Stop-Loss ($)',
+              label: currentData.trailing_active ? 'Követő SL ($)' : 'Stop-Loss ($)',
               data: Array(prices.length).fill(currentData.stop_loss_price),
               borderColor: 'rgba(239, 68, 68, 0.8)',
               borderWidth: 1.3,
@@ -812,6 +836,130 @@
           }
         });
       } catch (e) {}
+    }
+
+    async function loadHistory() {
+      try {
+        const res = await fetch(`./history.json?t=${Date.now()}`, { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          historyData = data;
+        }
+      } catch (e) {}
+      if (document.getElementById('tab-charts').classList.contains('active')) {
+        renderEquityChart();
+      }
+    }
+
+    function renderEquityChart() {
+      const { startCap } = getRevConfig();
+      const metaEl = document.getElementById('equityMeta');
+      const liveTotal = Number(currentData.total_usd) || 0;
+
+      const points = historyData.map(p => {
+        const dt = new Date(p.time);
+        return {
+          label: dt.toLocaleDateString('hu-HU', { month: '2-digit', day: '2-digit' }) + ' ' +
+                 dt.toLocaleTimeString('hu-HU', { hour: '2-digit', minute: '2-digit' }),
+          val: Number(p.total_usd)
+        };
+      });
+
+      if (liveTotal > 0) {
+        points.push({ label: 'Most', val: liveTotal });
+      }
+
+      if (points.length < 2) {
+        metaEl.textContent = `Jelenleg: $${liveTotal.toFixed(2)} • Gyűjtés folyamatban (óránként 1 új pont)`;
+        metaEl.className = 'chart-change';
+        points.unshift({ label: 'Indulás', val: startCap });
+      } else {
+        const diff = liveTotal - startCap;
+        const pct = startCap > 0 ? (diff / startCap) * 100 : 0;
+        const isUp = diff >= 0;
+        metaEl.textContent = `${isUp ? '+' : ''}${pct.toFixed(2)}% (${isUp ? '+' : ''}$${diff.toFixed(2)}) az induló tőkéhez képest • ${historyData.length} naplózott pont`;
+        metaEl.className = 'chart-change ' + (isUp ? 'pos' : 'neg');
+      }
+
+      const labels = points.map(p => p.label);
+      const values = points.map(p => p.val);
+      const isUp = liveTotal >= startCap;
+      const lineColor = isUp ? '#10b981' : '#ef4444';
+
+      const ctx = document.getElementById('equityChart').getContext('2d');
+      const grad = ctx.createLinearGradient(0, 0, 0, 210);
+      grad.addColorStop(0, isUp ? 'rgba(16, 185, 129, 0.28)' : 'rgba(239, 68, 68, 0.28)');
+      grad.addColorStop(1, 'rgba(11, 17, 32, 0.0)');
+
+      if (equityChart) equityChart.destroy();
+      equityChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Portfólió ($)',
+              data: values,
+              borderColor: lineColor,
+              backgroundColor: grad,
+              borderWidth: 2,
+              fill: true,
+              pointRadius: points.length <= 15 ? 3 : 0,
+              pointHoverRadius: 5,
+              tension: 0.25
+            },
+            {
+              label: 'Induló tőke ($)',
+              data: Array(values.length).fill(startCap),
+              borderColor: 'rgba(148, 163, 184, 0.7)',
+              borderWidth: 1.3,
+              borderDash: [5, 5],
+              pointRadius: 0,
+              fill: false
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#0f172a',
+              borderColor: '#334155',
+              borderWidth: 1,
+              titleColor: '#94a3b8',
+              bodyColor: '#f8fafc',
+              callbacks: {
+                label: (c) => `${c.dataset.label}: $${Number(c.parsed.y).toFixed(2)}`
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: {
+                color: '#64748b',
+                maxTicksLimit: 5,
+                maxRotation: 0,
+                font: { size: 10 }
+              }
+            },
+            y: {
+              position: 'right',
+              grid: { color: 'rgba(148, 163, 184, 0.08)' },
+              ticks: {
+                color: '#94a3b8',
+                font: { size: 10 },
+                callback: (v) => '$' + Number(v).toFixed(2)
+              }
+            }
+          }
+        }
+      });
     }
 
     function drawDoughnut(id, labels, values, colors) {
@@ -919,8 +1067,11 @@
       document.getElementById('adxHint').textContent = d.adx >= d.adx_min ? 'Trend aktív' : 'Oldalazás';
       document.getElementById('rsiVal').textContent = d.rsi;
       document.getElementById('rsiHint').textContent = d.rsi > d.rsi_max ? 'Túlvásárolt' : 'Normál zóna';
+      document.getElementById('slBoxName').textContent = d.trailing_active ? 'Követő Stop-Loss' : `Stop-Loss (-${d.stop_loss_pct || 6}%)`;
       document.getElementById('slVal').textContent = d.stop_loss_price ? `$${Number(d.stop_loss_price).toFixed(2)}` : '-';
-      document.getElementById('slHint').textContent = d.has_position ? `-${d.stop_loss_pct}% vészfék` : 'Inaktív';
+      document.getElementById('slHint').textContent = d.has_position
+        ? (d.trailing_active && d.highest_price ? `Aktív (Csúcs: $${Number(d.highest_price).toFixed(2)})` : `-${d.stop_loss_pct}% vészfék`)
+        : 'Inaktív';
 
       renderTrades(d.recent_trades);
 
@@ -932,6 +1083,7 @@
 
       if (document.getElementById('tab-charts').classList.contains('active')) {
         renderCharts(d);
+        renderEquityChart();
       }
     }
 
@@ -987,6 +1139,7 @@
       }
       await refreshLivePrice();
       await loadLiveChart(currentTf);
+      await loadHistory();
     }
 
     loadData();
