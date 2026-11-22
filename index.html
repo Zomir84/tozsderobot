@@ -545,4 +545,273 @@
         const ctx = document.getElementById('livePriceChart').getContext('2d');
         const grad = ctx.createLinearGradient(0, 0, 0, 210);
         grad.addColorStop(0, isUp ? 'rgba(16, 185, 129, 0.28)' : 'rgba(239, 68, 68, 0.28)');
-        grad.addColorStop(1, 'rgba(11, 17, 32, 0.
+        grad.addColorStop(1, 'rgba(11, 17, 32, 0.0)');
+
+        const datasets = [{
+          label: 'Árfolyam ($)',
+          data: prices,
+          borderColor: lineColor,
+          backgroundColor: grad,
+          borderWidth: 2,
+          fill: true,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          tension: 0.2
+        }];
+
+        const legendEl = document.getElementById('liveChartLegend');
+        if (currentData.has_position && currentData.entry_price) {
+          legendEl.style.display = 'flex';
+          datasets.push({
+            label: 'Bekerülés ($)',
+            data: Array(prices.length).fill(currentData.entry_price),
+            borderColor: 'rgba(96, 165, 250, 0.85)',
+            borderWidth: 1.3,
+            borderDash: [5, 5],
+            pointRadius: 0,
+            fill: false
+          });
+          if (currentData.stop_loss_price) {
+            datasets.push({
+              label: 'Stop-Loss ($)',
+              data: Array(prices.length).fill(currentData.stop_loss_price),
+              borderColor: 'rgba(239, 68, 68, 0.8)',
+              borderWidth: 1.3,
+              borderDash: [4, 4],
+              pointRadius: 0,
+              fill: false
+            });
+          }
+        } else {
+          legendEl.style.display = 'none';
+        }
+
+        if (liveChart) liveChart.destroy();
+        liveChart = new Chart(ctx, {
+          type: 'line',
+          data: { labels, datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: '#0f172a',
+                borderColor: '#334155',
+                borderWidth: 1,
+                titleColor: '#94a3b8',
+                bodyColor: '#f8fafc',
+                callbacks: {
+                  label: (c) => `${c.dataset.label}: $${Number(c.parsed.y).toFixed(2)}`
+                }
+              }
+            },
+            scales: {
+              x: {
+                grid: { display: false },
+                ticks: {
+                  color: '#64748b',
+                  maxTicksLimit: 5,
+                  maxRotation: 0,
+                  font: { size: 10 }
+                }
+              },
+              y: {
+                position: 'right',
+                grid: { color: 'rgba(148, 163, 184, 0.08)' },
+                ticks: {
+                  color: '#94a3b8',
+                  font: { size: 10 },
+                  callback: (v) => '$' + Number(v).toFixed(2)
+                }
+              }
+            }
+          }
+        });
+      } catch (e) {}
+    }
+
+    function drawDoughnut(id, labels, values, colors) {
+      if (charts[id]) charts[id].destroy();
+      charts[id] = new Chart(document.getElementById(id), {
+        type: 'doughnut',
+        data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0 }] },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '65%',
+          plugins: {
+            legend: { position: 'bottom', labels: { color: '#cbd5e1', boxWidth: 10, font: { size: 12 } } }
+          }
+        }
+      });
+    }
+
+    function renderCharts(d) {
+      drawDoughnut('portfolioChart', ['Szabad USDT', 'Nyitott SOL'],
+        [Math.max(0, d.free_usdt), Math.max(0, d.position_usd)], ['#3b82f6', '#8b5cf6']);
+
+      const reserve = Math.max(0, d.free_usdt - d.next_bet_usdt);
+      drawDoughnut('allocChart', ['Nyitott pozíció', 'Köv. 50% tét', 'Tartalék'],
+        [Math.max(0, d.position_usd), Math.max(0, d.next_bet_usdt), reserve], ['#8b5cf6', '#10b981', '#334155']);
+
+      const slMax = d.stop_loss_pct || 6;
+      const used = d.has_position && d.profit_pct < 0 ? Math.min(slMax, Math.abs(d.profit_pct)) : 0;
+      drawDoughnut('slChart', ['Felhasznált mínusz (%)', 'Maradék puffer (%)'],
+        [Number(used.toFixed(2)), Number(Math.max(0, slMax - used).toFixed(2))], ['#ef4444', '#10b981']);
+    }
+
+    function renderTrades(trades) {
+      const container = document.getElementById('tradesList');
+      if (!trades || trades.length === 0) {
+        container.innerHTML = '<p style="font-size: 0.82rem; color: var(--muted);">Még nincsenek betöltött kötések. Várd meg a következő 10 perces robot-futást (vagy indíts egy Run workflow-t).</p>';
+        return;
+      }
+      container.innerHTML = trades.map(t => {
+        const isBuy = t.side === 'BUY';
+        return `
+          <div class="trade-item">
+            <div class="trade-left">
+              <span class="trade-pill ${isBuy ? 'buy' : 'sell'}">${isBuy ? 'VÉTEL' : 'ELADÁS'}</span>
+              <span class="trade-time">${formatHuDate(t.time)}</span>
+            </div>
+            <div class="trade-right">
+              <span class="trade-main">$${Number(t.cost_usdt).toFixed(2)} USDT</span>
+              <span class="trade-sub">${Number(t.size).toFixed(4)} SOL @ $${Number(t.price).toFixed(2)}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function render(d) {
+      currentData = d;
+      const badge = document.getElementById('statusBadge');
+      badge.textContent = d.status || 'ISMERETLEN';
+      badge.className = 'badge ' + (
+        d.status === 'VÉTEL' ? 'green' :
+        d.status === 'ELADÁS' ? 'red' :
+        d.status === 'TARTÁS' ? '' : 'amber'
+      );
+
+      document.getElementById('totalUsd').textContent = `$${Number(d.total_usd).toFixed(2)}`;
+      document.getElementById('statusDetail').textContent = d.has_position
+        ? `${Number(d.free_crypto).toFixed(3)} SOL (~$${Number(d.position_usd).toFixed(2)})`
+        : 'Nincs nyitott pozíció';
+
+      const pb = document.getElementById('profitBadge');
+      if (d.has_position) {
+        const s = d.profit_pct >= 0 ? '+' : '';
+        pb.textContent = `${s}${Number(d.profit_pct).toFixed(2)}% (${s}$${Number(d.profit_usdt).toFixed(2)})`;
+        pb.className = d.profit_pct >= 0 ? 'pos' : 'neg';
+      } else {
+        pb.textContent = 'Várakozás';
+        pb.className = '';
+      }
+
+      document.getElementById('solPrice').textContent = `$${Number(d.price).toFixed(2)}`;
+      document.getElementById('entrySub').textContent = d.entry_price
+        ? `Bekerülés: $${Number(d.entry_price).toFixed(2)}` : 'Nincs pozíció';
+      document.getElementById('freeUsdt').textContent = `$${Number(d.free_usdt).toFixed(2)}`;
+      document.getElementById('freeSol').textContent = `${Number(d.free_crypto).toFixed(4)} SOL`;
+
+      const entryCard = document.getElementById('entryCard');
+      if (d.has_position && d.entry_price) {
+        entryCard.style.display = 'block';
+        document.getElementById('entryTimeVal').textContent = formatHuDate(d.entry_time);
+        document.getElementById('entryPriceVal').textContent = `$${Number(d.entry_price).toFixed(2)} / SOL`;
+        const sizeVal = d.entry_size ? Number(d.entry_size).toFixed(4) : Number(d.free_crypto).toFixed(4);
+        const costVal = d.entry_cost_usdt ? Number(d.entry_cost_usdt).toFixed(2) : (d.entry_price * d.free_crypto).toFixed(2);
+        document.getElementById('entryCostVal').textContent = `$${costVal} USDT (${sizeVal} SOL)`;
+      } else {
+        entryCard.style.display = 'none';
+      }
+
+      const spread = (d.ma10 - d.ma30).toFixed(2);
+      document.getElementById('maVal').textContent = `${d.ma10} / ${d.ma30}`;
+      document.getElementById('maHint').textContent = d.ma10 > d.ma30 ? `Emelkedő (+${spread}$)` : `Csökkenő (${spread}$)`;
+      document.getElementById('adxVal').textContent = d.adx;
+      document.getElementById('adxHint').textContent = d.adx >= d.adx_min ? 'Trend aktív' : 'Oldalazás';
+      document.getElementById('rsiVal').textContent = d.rsi;
+      document.getElementById('rsiHint').textContent = d.rsi > d.rsi_max ? 'Túlvásárolt' : 'Normál zóna';
+      document.getElementById('slVal').textContent = d.stop_loss_price ? `$${Number(d.stop_loss_price).toFixed(2)}` : '-';
+      document.getElementById('slHint').textContent = d.has_position ? `-${d.stop_loss_pct}% vészfék` : 'Inaktív';
+
+      renderTrades(d.recent_trades);
+
+      const slider = document.getElementById('simSlider');
+      slider.min = Math.max(10, Math.floor(d.price * 0.75));
+      slider.max = Math.ceil(d.price * 1.30);
+      slider.value = d.price;
+      updateSim();
+
+      if (document.getElementById('tab-charts').classList.contains('active')) {
+        renderCharts(d);
+      }
+    }
+
+    function updateSim() {
+      const simPrice = parseFloat(document.getElementById('simSlider').value);
+      document.getElementById('simPrice').textContent = `$${simPrice.toFixed(2)}`;
+      const simTotal = currentData.free_usdt + currentData.free_crypto * simPrice;
+      document.getElementById('simTotal').textContent = `$${simTotal.toFixed(2)}`;
+
+      const pnlEl = document.getElementById('simPnl');
+      if (currentData.has_position && currentData.entry_price) {
+        const pct = ((simPrice - currentData.entry_price) / currentData.entry_price) * 100;
+        const usd = (simPrice - currentData.entry_price) * currentData.free_crypto;
+        const slHit = currentData.stop_loss_price && simPrice <= currentData.stop_loss_price;
+        pnlEl.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}% (${usd >= 0 ? '+' : ''}$${usd.toFixed(2)})${slHit ? ' ⚠️ SL' : ''}`;
+        pnlEl.className = pct >= 0 ? 'pos' : 'neg';
+      } else {
+        pnlEl.textContent = 'Nincs nyitott pozíció';
+        pnlEl.className = '';
+      }
+    }
+
+    async function refreshLivePrice() {
+      try {
+        const sym = getBinanceSymbol(currentData);
+        const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`);
+        if (!res.ok) return;
+        const livePrice = parseFloat((await res.json()).price);
+        if (!livePrice) return;
+
+        const d = { ...currentData };
+        d.price = Number(livePrice.toFixed(2));
+        d.position_usd = Number((d.free_crypto * livePrice).toFixed(2));
+        d.total_usd = Number((d.free_usdt + d.position_usd).toFixed(2));
+        if (d.has_position && d.entry_price) {
+          d.profit_pct = Number((((livePrice - d.entry_price) / d.entry_price) * 100).toFixed(2));
+          d.profit_usdt = Number(((livePrice - d.entry_price) * d.free_crypto).toFixed(2));
+        }
+        render(d);
+        document.getElementById('updatedText').textContent =
+          'Élő ár: ' + new Date().toLocaleTimeString('hu-HU') +
+          (d.updated_at ? ' • Robot: ' + new Date(d.updated_at).toLocaleTimeString('hu-HU') : '');
+      } catch (e) {}
+    }
+
+    async function loadData() {
+      try {
+        const res = await fetch(`./status.json?t=${Date.now()}`, { cache: 'no-store' });
+        if (!res.ok) throw new Error();
+        render(await res.json());
+      } catch (e) {
+        render(FALLBACK);
+      }
+      await refreshLivePrice();
+      await loadLiveChart(currentTf);
+    }
+
+    loadData();
+    setInterval(async () => {
+      await refreshLivePrice();
+      await loadLiveChart(currentTf);
+    }, 60000);
+    setInterval(loadData, 300000);
+  </script>
+</body>
+</html>
