@@ -24,4 +24,6 @@ jobs:
         env:
           PIONEX_API_KEY: ${{ secrets.PIONEX_API_KEY }}
           PIONEX_SECRET_KEY: ${{ secrets.PIONEX_SECRET_KEY }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python pionex_robot.py
