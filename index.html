@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="hu" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pionex SOL/USDT Robot – Vezérlőpult</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        navy: {
+                            950: '#0b1120',
+                            900: '#111827',
+                            800: '#1f2937',
+                        },
+                        solana: {
+                            purple: '#9945FF',
+                            green: '#14F195',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #0b1120;
+            color: #f3f4f6;
+            background-image:
+                radial-gradient(circle at 12% 8%, rgba(153, 69, 255, 0.12), transparent 36%),
+                radial-gradient(circle at 88% 12%, rgba(20, 241, 149, 0.08), transparent 36%);
+            background-attachment: fixed;
+        }
+
+        .glass-card {
+            background: rgba(17, 24, 39, 0.82);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid #1f2937;
+        }
+
+        /* Egyedi stílus az árfolyam-szimulátor csúszkához */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: transparent;
+            cursor: pointer;
+        }
+
+        input[type="range"]::-webkit-slider-runnable-track {
+            height: 8px;
+            border-radius: 9999px;
+            background: linear-gradient(90deg, #ef4444 0%, #9945FF 42%, #14F195 100%);
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 22px;
+            height: 22px;
+            border-radius: 9999px;
+            background: #ffffff;
+            border: 3px solid #9945FF;
+            box-shadow: 0 0 12px rgba(153, 69, 255, 0.7);
+            margin-top: -7px;
+            transition: transform 0.15s ease;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.12);
+        }
+
+        input[type="range"]::-moz-range-track {
+            height: 8px;
+            border-radius: 9999px;
+            background: linear-gradient(90deg, #ef4444 0%, #9945FF 42%, #14F195 100%);
+        }
+
+        input[type="range"]::-moz-range-thumb {
+            width: 22px;
+            height: 22px;
+            border-radius: 9999px;
+            background: #ffffff;
+            border: 3px solid #9945FF;
+            box-shadow: 0 0 12px rgba(153, 69, 255, 0.7);
+        }
+    </style>
+</head>
+<body class="min-h-screen antialiased selection:bg-solana-purple/30 selection:text-white">
+
+    <!-- Fő konténer -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
+
+        <!-- 1. FEJLÉC -->
+        <header class="glass-card rounded-2xl p-4 sm:p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-xl">
+            <div class="flex items-center gap-4">
+                <!-- Solana / Robot ikon -->
+                <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#9945FF] to-[#14F195] p-[2px] shrink-0 shadow-lg shadow-[#9945FF]/20">
+                    <div class="w-full h-full bg-[#0b1120] rounded-[14px] flex items-center justify-center">
+                        <svg class="w-6 h-6 text-[#14F195]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex flex-wrap items-center gap-2.5">
+                        <h1 class="text-xl sm:text-2xl font-extrabold tracking-tight text-white">
+                            Pionex SOL/USDT Robot
+                        </h1>
+                        <!-- Élő státusz jelvény -->
+                        <span id="headerStatusBadge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold tracking-wide bg-emerald-500/15 text-[#14F195] border border-[#14F195]/30">
+                            <span id="headerStatusDot" class="w-2 h-2 rounded-full bg-[#14F195] animate-pulse"></span>
+                            <span id="headerStatusText">AKTÍV • TARTÁS</span>
+                        </span>
+                        <!-- Szimuláció aktív jelvény (alapból rejtve) -->
+                        <span id="simBadge" class="hidden inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-[#9945FF]/20 text-[#c084fc] border border-[#9945FF]/40">
+                            Szimulátor mód
+                        </span>
+                    </div>
+                    <p class="text-xs sm:text-sm text-slate-400 mt-1">
+                        Automata trendkövető stratégia (MA10/MA30 • ADX ≥ 20 • RSI ≤ 70 • Stop-Loss -6%)
+                    </p>
+                </div>
+            </div>
+
+            <!-- Fejléc gomb -->
+            <div class="flex items-center gap-3">
+                <button id="toggleToolsBtn" type="button"
+                    class="w-full md:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-[#9945FF] to-[#7c3aed] hover:from-[#a855f7] hover:to-[#8b5cf6] active:scale-[0.98] transition-all shadow-lg shadow-[#9945FF]/25 cursor-pointer">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                    </svg>
+                    <span>Napló beillesztése / Szimulátor</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- 2. FELSŐ KPI KÁRTYÁK (4 db) -->
+        <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- KPI 1: Teljes egyenleg -->
+            <div class="glass-card rounded-2xl p-5 hover:border-slate-700 transition-colors">
+                <div class="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider">
+                    <span>Teljes egyenleg</span>
+                    <span class="p-1.5 rounded-lg bg-[#9945FF]/15 text-[#c084fc]">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </span>
+                </div>
+                <div class="mt-3 flex items-baseline gap-2">
+                    <span id="kpiTotalEquity" class="text-2xl sm:text-3xl font-extrabold font-mono text-white">29.78</span>
+                    <span class="text-sm font-semibold text-slate-400">USDT</span>
+                </div>
+                <p id="kpiEquitySub" class="text-xs text-slate-400 mt-2">
+                    Szabad: <span class="text-slate-200 font-mono">14.70</span> + SOL: <span class="text-slate-200 font-mono">15.08</span>
+                </p>
+            </div>
+
+            <!-- KPI 2: SOL/USDT árfolyam -->
+            <div class="glass-card rounded-2xl p-5 hover:border-slate-700 transition-colors">
+                <div class="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider">
+                    <span>SOL/USDT árfolyam</span>
+                    <span class="p-1.5 rounded-lg bg-cyan-500/15 text-cyan-400">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                        </svg>
+                    </span>
+                </div>
+                <div class="mt-3 flex items-baseline gap-1.5">
+                    <span class="text-xl font-bold text-slate-400 font-mono">$</span>
+                    <span id="kpiPrice" class="text-2xl sm:text-3xl font-extrabold font-mono text-white">68.94</span>
+                </div>
+                <p class="text-xs text-slate-400 mt-2">
+                    Bekerülési ár: <span id="kpiEntryPrice" class="text-slate-200 font-mono">~$70.36</span>
+                </p>
+            </div>
+
+            <!-- KPI 3: Nyitott pozíció -->
+            <div class="glass-card rounded-2xl p-5 hover:border-slate-700 transition-colors">
+                <div class="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider">
+                    <span>Nyitott pozíció</span>
+                    <span class="p-1.5 rounded-lg bg-[#14F195]/15 text-[#14F195]">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                        </svg>
+                    </span>
+                </div>
+                <div class="mt-3 flex items-baseline gap-2">
+                    <span id="kpiSolAmount" class="text-2xl sm:text-3xl font-extrabold font-mono text-white">0.2187</span>
+                    <span class="text-sm font-semibold text-[#14F195]">SOL</span>
+                </div>
+                <p class="text-xs text-slate-400 mt-2">
+                    Érték: <span id="kpiPositionUsd" class="text-slate-200 font-mono">~$15.08</span> <span class="text-slate-500">•</span> Eladható: <span id="kpiSellableSol" class="text-slate-300 font-mono">0.218</span>
+                </p>
+            </div>
+
+            <!-- KPI 4: Aktuális eredmény -->
+            <div id="kpiPnlCard" class="glass-card rounded-2xl p-5 hover:border-slate-700 transition-colors">
+                <div class="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider">
+                    <span>Aktuális eredmény</span>
+                    <span id="kpiPnlIconWrap" class="p-1.5 rounded-lg bg-rose-500/15 text-rose-400">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
+                        </svg>
+                    </span>
+                </div>
+                <div class="mt-3 flex items-baseline gap-2">
+                    <span id="kpiPnlPct" class="text-2xl sm:text-3xl font-extrabold font-mono text-rose-400">-2.02%</span>
+                </div>
+                <p class="text-xs text-slate-400 mt-2">
+                    Dollárban: <span id="kpiPnlUsd" class="font-mono font-semibold text-rose-400">-$0.31</span> <span class="text-slate-500">•</span> SL: <span class="font-mono text-slate-300">-6.0%</span>
+                </p>
+            </div>
+        </section>
+
+        <!-- 3. FŐ VIZUÁLIS SZEKCIÓ: 3 INTERAKTÍV KÖRDIAGRAM -->
+        <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+            <!-- Kördiagram 1: Portfólió megoszlás -->
+            <div class="glass-card rounded-2xl p-5 sm:p-6 flex flex-col justify-between shadow-lg">
+                <div>
+                    <h2 class="text-base font-bold text-white flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-[#9945FF]"></span>
+                        Portfólió megoszlás (USDT vs. SOL)
+                    </h2>
+                    <p class="text-xs text-slate-400 mt-0.5">A teljes számlaegyenleg pillanatnyi aránya</p>
+                </div>
+
+                <div class="relative h-56 my-5 flex items-center justify-center">
+                    <canvas id="portfolioChart"></canvas>
+                    <!-- Középső összesítő szöveg -->
+                    <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                        <span class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Összesen</span>
+                        <span id="chart1CenterTotal" class="text-xl font-extrabold font-mono text-white">$29.78</span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2.5 pt-3 border-t border-slate-800/80 text-xs">
+                    <div class="flex items-center justify-between bg-slate-900/70 rounded-xl px-3 py-2">
+                        <span class="flex items-center gap-1.5 text-slate-300">
+                            <span class="w-2.5 h-2.5 rounded-sm bg-[#14F195]"></span>
+                            SOL pozíció
+                        </span>
+                        <span id="legendSolPct" class="font-mono font-bold text-white">50.6%</span>
+                    </div>
+                    <div class="flex items-center justify-between bg-slate-900/70 rounded-xl px-3 py-2">
+                        <span class="flex items-center gap-1.5 text-slate-300">
+                            <span class="w-2.5 h-2.5 rounded-sm bg-[#9945FF]"></span>
+                            Szabad USDT
+                        </span>
+                        <span id="legendUsdtPct" class="font-mono font-bold text-white">49.4%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Kördiagram 2: Tőkeallokáció és Tétstruktúra -->
+            <div class="glass-card rounded-2xl p-5 sm:p-6 flex flex-col justify-between shadow-lg">
+                <div>
+                    <h2 class="text-base font-bold text-white flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+                        Tőkeallokáció és Tétstruktúra
+                    </h2>
+                    <p class="text-xs text-slate-400 mt-0.5">50%-os tétkezelés és biztonsági tartalék</p>
+                </div>
+
+                <div class="relative h-56 my-5 flex items-center justify-center">
+                    <canvas id="allocationChart"></canvas>
+                </div>
+
+                <div class="space-y-1.5 pt-3 border-t border-slate-800/80 text-xs">
+                    <div class="flex items-center justify-between">
+                        <span class="flex items-center gap-2 text-slate-300">
+                            <span class="w-2.5 h-2.5 rounded-sm bg-[#14F195]"></span>
+                            Nyitott SOL pozíció
+                        </span>
+                        <span id="allocSolVal" class="font-mono font-semibold text-white">$15.08</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="flex items-center gap-2 text-slate-300">
+                            <span class="w-2.5 h-2.5 rounded-sm bg-[#38bdf8]"></span>
+                            Következő 50%-os tét
+                        </span>
+                        <span id="allocNextBetVal" class="font-mono font-semibold text-white">$7.35</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="flex items-center gap-2 text-slate-300">
+                            <span class="w-2.5 h-2.5 rounded-sm bg-[#9945FF]"></span>
+                            Biztonsági USDT tartalék
+                        </span>
+                        <span id="allocReserveVal" class="font-mono font-semibold text-white">$7.35</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Kördiagram 3: Stop-Loss Kockázati Puffer (-6%) -->
+            <div class="glass-card rounded-2xl p-5 sm:p-6 flex flex-col justify-between shadow-lg">
+                <div>
+                    <h2 class="text-base font-bold text-white flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                        Stop-Loss Kockázati Puffer (-6%)
+                    </h2>
+                    <p class="text-xs text-slate-400 mt-0.5">Vészfék kihasználtsága a jelenlegi áron</p>
+                </div>
+
+                <div class="relative h-56 my-5 flex items-center justify-center">
+                    <canvas id="stopLossChart"></canvas>
+                    <!-- Félkör alatti középérték -->
+                    <div class="absolute inset-x-0 bottom-5 flex flex-col items-center justify-center pointer-events-none text-center">
+                        <span id="slGaugeMain" class="text-2xl font-extrabold font-mono text-rose-400">-2.02%</span>
+                        <span id="slGaugeSub" class="text-xs text-slate-400 font-medium mt-0.5">3.98% tartalék a Stop-Lossig</span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2.5 pt-3 border-t border-slate-800/80 text-xs">
+                    <div class="bg-slate-900/70 rounded-xl px-3 py-2">
+                        <div class="text-slate-400 text-[11px]">Aktiválási szint</div>
+                        <div id="slTriggerPriceText" class="font-mono font-bold text-rose-400 mt-0.5">$66.14</div>
+                    </div>
+                    <div class="bg-slate-900/70 rounded-xl px-3 py-2 text-right">
+                        <div class="text-slate-400 text-[11px]">Távolság dollárban</div>
+                        <div id="slDistanceUsdText" class="font-mono font-bold text-[#14F195] mt-0.5">+$2.80</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. STRATÉGIA ÉS TECHNIKAI INDIKÁTOROK PANEL -->
+        <section class="glass-card rounded-2xl p-5 sm:p-6 shadow-lg">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-6">
+                <div>
+                    <h2 class="text-lg font-bold text-white">Stratégia és Technikai Indikátorok</h2>
+                    <p class="text-xs text-slate-400">Az órás gyertyák alapján számolt élő szűrők és belépési/kilépési küszöbök</p>
+                </div>
+                <span class="text-xs font-mono text-slate-400 bg-slate-900/80 border border-slate-800 px-3 py-1.5 rounded-xl w-fit">
+                    Idősík: 1H • Ellenőrzés: minden óra :10
+                </span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+                <!-- 1. Trend (MA10 vs MA30) -->
+                <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 sm:p-5 flex flex-col justify-between">
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <h3 class="text-sm font-bold text-white">Trend (MA10 vs. MA30)</h3>
+                            <p class="text-xs text-slate-400 mt-0.5">Fő kilépési jelzés: ha MA10 &lt; MA30</p>
+                        </div>
+                        <span id="maBadge" class="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 whitespace-nowrap">
+                            Trendforduló közelében
+                        </span>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-2 my-4">
+                        <div class="bg-[#0b1120] rounded-xl p-2.5 text-center border border-slate-800/80">
+                            <div class="text-[11px] text-slate-400">MA10 (Gyors)</div>
+                            <div id="indMa10" class="font-mono font-bold text-base text-[#14F195] mt-0.5">69.67</div>
+                        </div>
+                        <div class="bg-[#0b1120] rounded-xl p-2.5 text-center border border-slate-800/80">
+                            <div class="text-[11px] text-slate-400">MA30 (Lassú)</div>
+                            <div id="indMa30" class="font-mono font-bold text-base text-[#9945FF] mt-0.5">69.06</div>
+                        </div>
+                        <div class="bg-[#0b1120] rounded-xl p-2.5 text-center border border-slate-800/80">
+                            <div class="text-[11px] text-slate-400">Különbség</div>
+                            <div id="indMaDiff" class="font-mono font-bold text-base text-amber-400 mt-0.5">+0.61</div>
+                        </div>
+                    </div>
+
+                    <p id="maStatusText" class="text-xs text-slate-300 bg-slate-800/50 rounded-xl px-3 py-2 border border-slate-700/50">
+                        Trendforduló közelében – ha az MA10 az MA30 alá esik, a robot automatikusan elad.
+                    </p>
+                </div>
+
+                <!-- 2. Stop-Loss vizuális távolságsáv -->
+                <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 sm:p-5 flex flex-col justify-between">
+                    <div class="flex items-start justify-between gap-3">
+                        <div>
+                            <h3 class="text-sm font-bold text-white">Árfolyam pozíciója a Stop-Losshoz képest</h3>
+                            <p class="text-xs text-slate-400 mt-0.5">Stop-Loss (-6%) • Jelenlegi ár • Bekerülési ár</p>
+                        </div>
+                        <span id="slLevelBadge" class="font-mono text-xs font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 px-2.5 py-1 rounded-lg">
+                            SL: $66.14
+                        </span>
+                    </div>
+
+                    <!-- Vizuális sáv -->
+                    <div class="my-6">
+                        <div class="relative h-3 bg-slate-800 rounded-full overflow-visible">
+                            <!-- Színezett háttérsáv: piros -> lila -> zöld -->
+                            <div class="absolute inset-0 rounded-full bg-gradient-to-r from-rose-500/70 via-amber-400/50 to-[#14F195]/70"></div>
+
+                            <!-- Stop-Loss marker -->
+                            <div id="barSlMarker" class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full bg-rose-500 border-2 border-white shadow" style="left: 15%;" title="Stop-Loss"></div>
+
+                            <!-- Bekerülési ár marker -->
+                            <div id="barEntryMarker" class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 rounded-full bg-[#9945FF] border-2 border-white shadow" style="left: 78%;" title="Bekerülési ár"></div>
+
+                            <!-- Jelenlegi ár marker (kiemelt) -->
+                            <div id="barCurrentMarker" class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 rounded-full bg-[#14F195] border-2 border-[#0b1120] ring-2 ring-white shadow-lg transition-all duration-150" style="left: 57%;" title="Jelenlegi ár"></div>
+                        </div>
+
+                        <div class="flex justify-between text-[11px] font-mono mt-3 text-slate-400">
+                            <div class="text-left">
+                                <span class="text-rose-400 font-bold block">Stop-Loss</span>
+                                <span id="barSlLabel">$66.14</span>
+                            </div>
+                            <div class="text-center">
+                                <span class="text-[#14F195] font-bold block">Jelenlegi</span>
+                                <span id="barCurrentLabel">$68.94</span>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-[#c084fc] font-bold block">Bekerülés</span>
+                                <span id="barEntryLabel">$70.36</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <p id="slBarNote" class="text-xs text-slate-400">
+                        A jelenlegi árfolyam még biztonságos távolságban van a -6%-os vészféktől.
+                    </p>
+                </div>
+
+                <!-- 3. ADX (Trend erőssége) -->
+                <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 sm:p-5">
+                    <div class="flex items-center justify-between mb-2">
+                        <div>
+                            <h3 class="text-sm font-bold text-white">ADX (Trenderősség szűrő)</h3>
+                            <p class="text-xs text-slate-400">Minimum 20.0 szükséges új vételhez (alatta oldalazás)</p>
+                        </div>
+                        <div class="text-right">
+                            <span id="indAdxVal" class="font-mono text-xl font-extrabold text-[#14F195]">20.4</span>
+                            <span class="text-xs text-slate-400 block">Min: 20.0</span>
+                        </div>
+                    </div>
+
+                    <div class="relative h-3 bg-slate-800 rounded-full mt-4 overflow-visible">
+                        <div id="adxProgressBar" class="h-full rounded-full bg-gradient-to-r from-[#9945FF] to-[#14F195] transition-all duration-300" style="width: 40.8%;"></div>
+                        <!-- 20-as küszöbvonal (50-es skálán 40%-nál) -->
+                        <div class="absolute top-[-4px] bottom-[-4px] w-0.5 bg-amber-400 shadow" style="left: 40%;" title="20.0 küszöb"></div>
+                    </div>
+
+                    <div class="flex justify-between text-[11px] font-mono text-slate-500 mt-2">
+                        <span>0 (Oldalazás)</span>
+                        <span class="text-amber-400 font-semibold">20 (Küszöb)</span>
+                        <span>50+ (Erős trend)</span>
+                    </div>
+                </div>
+
+                <!-- 4. RSI (Relatív Erősség Index) -->
+                <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 sm:p-5">
+                    <div class="flex items-center justify-between mb-2">
+                        <div>
+                            <h3 class="text-sm font-bold text-white">RSI (Túlvásároltság szűrő)</h3>
+                            <p class="text-xs text-slate-400">Maximum 70.0 lehet új vételhez (felette túl drága)</p>
+                        </div>
+                        <div class="text-right">
+                            <span id="indRsiVal" class="font-mono text-xl font-extrabold text-cyan-400">42.8</span>
+                            <span class="text-xs text-slate-400 block">Max: 70.0</span>
+                        </div>
+                    </div>
+
+                    <div class="relative h-3 bg-slate-800 rounded-full mt-4 overflow-visible">
+                        <div id="rsiProgressBar" class="h-full rounded-full bg-gradient-to-r from-cyan-400 via-[#9945FF] to-rose-500 transition-all duration-300" style="width: 42.8%;"></div>
+                        <!-- 70-es túlvásárolt küszöb -->
+                        <div class="absolute top-[-4px] bottom-[-4px] w-0.5 bg-rose-400 shadow" style="left: 70%;" title="70.0 túlvásárolt határ"></div>
+                    </div>
+
+                    <div class="flex justify-between text-[11px] font-mono text-slate-500 mt-2">
+                        <span>0</span>
+                        <span>30 (Túladott)</span>
+                        <span class="text-rose-400 font-semibold">70 (Határ)</span>
+                        <span>100</span>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- 5. INTERAKTÍV PANEL: GYORS FRISSÍTÉS GITHUB NAPLÓBÓL & ÁR-SZIMULÁTOR -->
+        <section id="interactivePanel" class="glass-card rounded-2xl p-5 sm:p-6 shadow-xl border-[#9945FF]/30">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-5">
+                <div>
+                    <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                        <svg class="w-5 h-5 text-[#14F195]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Gyors frissítés GitHub naplóból &amp; Ár-szimulátor
+                    </h2>
+                    <p class="text-xs text-slate-400 mt-0.5">Illeszd be a legújabb GitHub Actions logot az adatok frissítéséhez, vagy húzd a csúszkát élő szimulációhoz</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+                <!-- Bal oldal: GitHub Napló beolvasó -->
+                <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 sm:p-5 flex flex-col justify-between space-y-4">
+                    <div>
+                        <label for="logInput" class="block text-sm font-semibold text-slate-200 mb-1.5">
+                            GitHub Actions napló beillesztése
+                        </label>
+                        <p class="text-xs text-slate-400 mb-3">
+                            Másold ki a <code class="text-[#14F195] bg-slate-800 px-1.5 py-0.5 rounded">Pionex robot futtatása</code> 15–17. sorait és kattints a beolvasásra:
+                        </p>
+                        <textarea id="logInput" rows="5"
+                            class="w-full rounded-xl bg-[#0b1120] border border-slate-700 focus:border-[#9945FF] focus:ring-2 focus:ring-[#9945FF]/30 outline-none p-3 text-xs font-mono text-slate-200 placeholder-slate-500 resize-y"
+                            placeholder="Pionex API kapcsolat OK! Szabad egyenleg: 14.7008 USDT (50% tét = 7.35 USDT) | 0.218743 SOL
+SOL_USDT ár: 68.94 | MA10: 69.67 | MA30: 69.06 | ADX: 20.4 | RSI: 42.8
+TARTÁS -> 0.218 SOL (~15.08 USD) | Eredmény: -2.02%"></textarea>
+                    </div>
+
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <button id="parseLogBtn" type="button"
+                            class="px-4 py-2.5 rounded-xl font-semibold text-sm text-[#0b1120] bg-[#14F195] hover:bg-[#34f5a5] active:scale-[0.98] transition-all shadow-lg shadow-[#14F195]/20 cursor-pointer">
+                            Adatok beolvasása
+                        </button>
+                        <span id="parseFeedback" class="text-xs font-medium text-slate-400"></span>
+                    </div>
+                </div>
+
+                <!-- Jobb oldal: Mi lenne, ha...? Ár-szimulátor -->
+                <div class="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 sm:p-5 flex flex-col justify-between space-y-4">
+                    <div>
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-sm font-semibold text-slate-200">„Mi lenne, ha...?” Árfolyam-szimulátor</h3>
+                            <span id="simPriceDisplay" class="font-mono text-lg font-extrabold text-[#14F195] bg-[#0b1120] px-3 py-1 rounded-xl border border-slate-700">
+                                $68.94
+                            </span>
+                        </div>
+                        <p class="text-xs text-slate-400 mt-1">
+                            Húzd el a csúszkát $60 és $85 között, és nézd meg valós időben, hogyan változik a nyereséged, a kördiagramok és a Stop-Loss puffer!
+                        </p>
+
+                        <div class="mt-6">
+                            <input id="priceSlider" type="range" min="60" max="85" step="0.05" value="68.94" class="w-full">
+                            <div class="flex justify-between text-[11px] font-mono text-slate-400 mt-2">
+                                <span>$60.00</span>
+                                <span class="text-rose-400">SL ~$66.14</span>
+                                <span class="text-[#c084fc]">Vétel ~$70.36</span>
+                                <span class="text-[#14F195]">$85.00</span>
+                            </div>
+                        </div>
+
+                        <!-- Gyors szimulációs összefoglaló doboz -->
+                        <div class="grid grid-cols-3 gap-2 mt-5 text-center">
+                            <div class="bg-[#0b1120] rounded-xl p-2.5 border border-slate-800">
+                                <div class="text-[11px] text-slate-400">Új egyenleg</div>
+                                <div id="simEquityPreview" class="font-mono font-bold text-sm text-white mt-0.5">$29.78</div>
+                            </div>
+                            <div class="bg-[#0b1120] rounded-xl p-2.5 border border-slate-800">
+                                <div class="text-[11px] text-slate-400">Eredmény %</div>
+                                <div id="simPnlPctPreview" class="font-mono font-bold text-sm text-rose-400 mt-0.5">-2.02%</div>
+                            </div>
+                            <div class="bg-[#0b1120] rounded-xl p-2.5 border border-slate-800">
+                                <div class="text-[11px] text-slate-400">Robot döntése</div>
+                                <div id="simDecisionPreview" class="font-bold text-xs text-[#14F195] mt-1">TARTÁS</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between pt-2">
+                        <span class="text-xs text-slate-500">Élő log érték visszaállítása egy kattintással</span>
+                        <button id="resetSimBtn" type="button"
+                            class="px-4 py-2 rounded-xl font-semibold text-xs text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 active:scale-[0.98] transition-all cursor-pointer">
+                            Visszaállítás
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- Lábléc -->
+        <footer class="text-center text-xs text-slate-500 pb-4">
+            Pionex SOL/USDT Automata Kereskedőrobot • Lokális grafikus vezérlőpult (a számítások a böngésződben futnak)
+        </footer>
+    </div>
+
+    <script>
+        // --- 1. ALAPÁLLAPOT (A legutóbbi élő GitHub napló pontos adatai) ---
+        const initialLiveState = {
+            price: 68.94,
+            entryPrice: 70.3613, // 68.94 / (1 - 0.0202) -> ~70.36 USDT
+            freeUsdt: 14.7008,
+            solBalance: 0.218743,
+            sellableSol: 0.218,
+            ma10: 69.67,
+            ma30: 69.06,
+            adx: 20.4,
+            rsi: 42.8,
+            stopLossPct: 6.0
+        };
+
+        // baseState tárolja a legutóbb beolvasott élő naplót; currentState a megjelenített (esetleg szimulált) állapotot
+        let baseState = { ...initialLiveState };
+        let currentState = { ...initialLiveState };
+
+        // Chart.js globális sötét téma beállítások
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+
+        let portfolioChart = null;
+        let allocationChart = null;
+        let stopLossChart = null;
+
+        // --- 2. DIAGRAMOK INICIALIZÁLÁSA ---
+        function initCharts() {
+            // 1. Portfólió megoszlás (Doughnut)
+            const ctx1 = document.getElementById('portfolioChart').getContext('2d');
+            portfolioChart = new Chart(ctx1, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Nyitott SOL pozíció', 'Szabad USDT'],
+                    datasets: [{
+                        data: [15.08, 14.70],
+                        backgroundColor: ['#14F195', '#9945FF'],
+                        borderColor: '#111827',
+                        borderWidth: 4,
+                        hoverOffset: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '70%',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#0f172a',
+                            titleColor: '#f8fafc',
+                            bodyColor: '#cbd5e1',
+                            borderColor: '#334155',
+                            borderWidth: 1,
+                            padding: 10,
+                            callbacks: {
+                                label: (ctx) => {
+                                    const val = ctx.parsed;
+                                    const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                                    const pct = total > 0 ? ((val / total) * 100).toFixed(1) : '0.0';
+                                    return ` $${val.toFixed(2)} (${pct}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // 2. Tőkeallokáció és Tétstruktúra (Pie / Doughnut)
+            const ctx2 = document.getElementById('allocationChart').getContext('2d');
+            allocationChart = new Chart(ctx2, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Nyitott SOL pozíció', 'Következő 50%-os tét', 'Biztonsági USDT tartalék'],
+                    datasets: [{
+                        data: [15.08, 7.35, 7.35],
+                        backgroundColor: ['#14F195', '#38bdf8', '#9945FF'],
+                        borderColor: '#111827',
+                        borderWidth: 4,
+                        hoverOffset: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '52%',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#0f172a',
+                            titleColor: '#f8fafc',
+                            bodyColor: '#cbd5e1',
+                            borderColor: '#334155',
+                            borderWidth: 1,
+                            padding: 10,
+                            callbacks: {
+                                label: (ctx) => {
+                                    const val = ctx.parsed;
+                                    const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                                    const pct = total > 0 ? ((val / total) * 100).toFixed(1) : '0.0';
+                                    return ` $${val.toFixed(2)} (${pct}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // 3. Stop-Loss Kockázati Puffer (Fél-doughnut gauge)
+            const ctx3 = document.getElementById('stopLossChart').getContext('2d');
+            stopLossChart = new Chart(ctx3, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Felhasznált veszteség', 'Hátralévő puffer a Stop-Lossig'],
+                    datasets: [{
+                        data: [2.02, 3.98],
+                        backgroundColor: ['#f43f5e', '#14F195'],
+                        borderColor: '#111827',
+                        borderWidth: 4,
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    rotation: -90,
+                    circumference: 180,
+                    cutout: '74%',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#0f172a',
+                            titleColor: '#f8fafc',
+                            bodyColor: '#cbd5e1',
+                            borderColor: '#334155',
+                            borderWidth: 1,
+                            padding: 10,
+                            callbacks: {
+                                label: (ctx) => {
+                                    if (ctx.label.includes('Nyereség')) {
+                                        return ` 100% biztonságban`;
+                                    }
+                                    return ` ${ctx.parsed.toFixed(2)}%`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // --- 3. FELÜLET ÉS DIAGRAMOK FRISSÍTÉSE ---
+        function updateDashboard(state) {
+            const positionUsd = state.solBalance * state.price;
+            const totalEquity = state.freeUsdt + positionUsd;
+            const nextBetUsd = state.freeUsdt * 0.5;
+            const reserveUsd = state.freeUsdt - nextBetUsd;
+
+            const hasPosition = positionUsd >= 10.0;
+            const pnlPct = state.entryPrice > 0 ? ((state.price - state.entryPrice) / state.entryPrice) * 100 : 0;
+            const pnlUsd = state.entryPrice > 0 ? (state.price - state.entryPrice) * state.sellableSol : 0;
+            const stopLossPrice = state.entryPrice * (1 - state.stopLossPct / 100);
+            const stopLossTriggered = hasPosition && state.price <= stopLossPrice;
+            const maSellSignal = hasPosition && state.ma10 < state.ma30;
+
+            // Állapot meghatározása
+            let statusText = 'AKTÍV • TARTÁS';
+            let decisionShort = 'TARTÁS';
+            let statusColorClass = 'bg-emerald-500/15 text-[#14F195] border-[#14F195]/30';
+            let dotColorClass = 'bg-[#14F195]';
+
+            if (!hasPosition) {
+                statusText = 'AKTÍV • VÁRAKOZÁS';
+                decisionShort = 'VÁRAKOZÁS';
+                statusColorClass = 'bg-slate-500/15 text-slate-300 border-slate-500/30';
+                dotColorClass = 'bg-slate-400';
+            } else if (stopLossTriggered) {
+                statusText = 'VÉSZFÉK • STOP-LOSS ELADÁS';
+                decisionShort = 'STOP-LOSS ELADÁS';
+                statusColorClass = 'bg-rose-500/20 text-rose-400 border-rose-500/40';
+                dotColorClass = 'bg-rose-500';
+            } else if (maSellSignal) {
+                statusText = 'JELZÉS • ELADÁS (MA10 < MA30)';
+                decisionShort = 'ELADÁS (MA)';
+                statusColorClass = 'bg-amber-500/20 text-amber-400 border-amber-500/40';
+                dotColorClass = 'bg-amber-400';
+            }
+
+            // Fejléc státusz jelvény frissítése
+            const badgeEl = document.getElementById('headerStatusBadge');
+            badgeEl.className = `inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold tracking-wide border ${statusColorClass}`;
+            document.getElementById('headerStatusDot').className = `w-2 h-2 rounded-full animate-pulse ${dotColorClass}`;
+            document.getElementById('headerStatusText').textContent = statusText;
+
+            // Szimulátor jelvény megjelenítése, ha eltér az élő ártól
+            const isSimulating = Math.abs(state.price - baseState.price) > 0.009;
+            document.getElementById('simBadge').classList.toggle('hidden', !isSimulating);
+
+            // KPI kártyák frissítése
+            document.getElementById('kpiTotalEquity').textContent = totalEquity.toFixed(2);
+            document.getElementById('kpiEquitySub').innerHTML =
+                `Szabad: <span class="text-slate-200 font-mono">${state.freeUsdt.toFixed(2)}</span> + SOL: <span class="text-slate-200 font-mono">${positionUsd.toFixed(2)}</span>`;
+
+            document.getElementById('kpiPrice').textContent = state.price.toFixed(2);
+            document.getElementById('kpiEntryPrice').textContent = `~$${state.entryPrice.toFixed(2)}`;
+
+            document.getElementById('kpiSolAmount').textContent = state.solBalance.toFixed(4);
+            document.getElementById('kpiPositionUsd').textContent = `~$${positionUsd.toFixed(2)}`;
+            document.getElementById('kpiSellableSol').textContent = state.sellableSol.toFixed(3);
+
+            // PnL színezés
+            const isPositive = pnlPct >= 0;
+            const pnlSign = isPositive ? '+' : '';
+            const pnlUsdSign = pnlUsd >= 0 ? '+$' : '-$';
+            const pnlColor = isPositive ? 'text-[#14F195]' : 'text-rose-400';
+            const pnlIconBg = isPositive ? 'bg-[#14F195]/15 text-[#14F195]' : 'bg-rose-500/15 text-rose-400';
+
+            const kpiPnlPctEl = document.getElementById('kpiPnlPct');
+            kpiPnlPctEl.textContent = `${pnlSign}${pnlPct.toFixed(2)}%`;
+            kpiPnlPctEl.className = `text-2xl sm:text-3xl font-extrabold font-mono ${pnlColor}`;
+
+            const kpiPnlUsdEl = document.getElementById('kpiPnlUsd');
+            kpiPnlUsdEl.textContent = `${pnlUsdSign}${Math.abs(pnlUsd).toFixed(2)}`;
+            kpiPnlUsdEl.className = `font-mono font-semibold ${pnlColor}`;
+
+            const pnlIconWrap = document.getElementById('kpiPnlIconWrap');
+            pnlIconWrap.className = `p-1.5 rounded-lg ${pnlIconBg}`;
+            pnlIconWrap.innerHTML = isPositive
+                ? `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>`
+                : `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" /></svg>`;
+
+            // --- Kördiagram 1 frissítése ---
+            portfolioChart.data.datasets[0].data = [Number(positionUsd.toFixed(2)), Number(state.freeUsdt.toFixed(2))];
+            portfolioChart.update();
+
+            document.getElementById('chart1CenterTotal').textContent = `$${totalEquity.toFixed(2)}`;
+            const solShare = totalEquity > 0 ? (positionUsd / totalEquity) * 100 : 0;
+            const usdtShare = totalEquity > 0 ? (state.freeUsdt / totalEquity) * 100 : 0;
+            document.getElementById('legendSolPct').textContent = `${solShare.toFixed(1)}%`;
+            document.getElementById('legendUsdtPct').textContent = `${usdtShare.toFixed(1)}%`;
+
+            // --- Kördiagram 2 frissítése ---
+            allocationChart.data.datasets[0].data = [
+                Number(positionUsd.toFixed(2)),
+                Number(nextBetUsd.toFixed(2)),
+                Number(reserveUsd.toFixed(2))
+            ];
+            allocationChart.update();
+
+            document.getElementById('allocSolVal').textContent = `$${positionUsd.toFixed(2)}`;
+            document.getElementById('allocNextBetVal').textContent = `$${nextBetUsd.toFixed(2)}`;
+            document.getElementById('allocReserveVal').textContent = `$${reserveUsd.toFixed(2)}`;
+
+            // --- Kördiagram 3 (Stop-Loss puffer) frissítése ---
+            const slGaugeMain = document.getElementById('slGaugeMain');
+            const slGaugeSub = document.getElementById('slGaugeSub');
+
+            if (pnlPct >= 0) {
+                stopLossChart.data.labels = ['Nyereségben (100% védett puffer)'];
+                stopLossChart.data.datasets[0].data = [100];
+                stopLossChart.data.datasets[0].backgroundColor = ['#14F195'];
+                slGaugeMain.textContent = `+${pnlPct.toFixed(2)}%`;
+                slGaugeMain.className = 'text-2xl font-extrabold font-mono text-[#14F195]';
+                slGaugeSub.textContent = '100% biztonságban • Nyereség mód';
+            } else {
+                const usedLoss = Math.min(Math.abs(pnlPct), state.stopLossPct);
+                const remaining = Math.max(0, state.stopLossPct - usedLoss);
+                stopLossChart.data.labels = ['Felhasznált veszteség', 'Hátralévő puffer a Stop-Lossig'];
+                stopLossChart.data.datasets[0].data = [Number(usedLoss.toFixed(2)), Number(remaining.toFixed(2))];
+                stopLossChart.data.datasets[0].backgroundColor = remaining === 0 ? ['#ef4444', '#1e293b'] : ['#f43f5e', '#14F195'];
+
+                slGaugeMain.textContent = `${pnlPct.toFixed(2)}%`;
+                slGaugeMain.className = 'text-2xl font-extrabold font-mono text-rose-400';
+                slGaugeSub.textContent = remaining === 0
+                    ? 'Stop-Loss szint elérve! (Eladás)'
+                    : `${remaining.toFixed(2)}% tartalék a Stop-Lossig`;
+            }
+            stopLossChart.update();
+
+            const distUsd = state.price - stopLossPrice;
+            document.getElementById('slTriggerPriceText').textContent = `$${stopLossPrice.toFixed(2)}`;
+            const slDistEl = document.getElementById('slDistanceUsdText');
+            slDistEl.textContent = distUsd >= 0 ? `+$${distUsd.toFixed(2)}` : `-$${Math.abs(distUsd).toFixed(2)}`;
+            slDistEl.className = `font-mono font-bold mt-0.5 ${distUsd >= 0 ? 'text-[#14F195]' : 'text-rose-400'}`;
+
+            // --- Stratégia & Technikai indikátorok frissítése ---
+            const maDiff = state.ma10 - state.ma30;
+            document.getElementById('indMa10').textContent = state.ma10.toFixed(2);
+            document.getElementById('indMa30').textContent = state.ma30.toFixed(2);
+
+            const indMaDiffEl = document.getElementById('indMaDiff');
+            indMaDiffEl.textContent = `${maDiff >= 0 ? '+' : ''}${maDiff.toFixed(2)}`;
+
+            const maBadgeEl = document.getElementById('maBadge');
+            const maStatusEl = document.getElementById('maStatusText');
+
+            if (maDiff < 0) {
+                indMaDiffEl.className = 'font-mono font-bold text-base text-rose-400 mt-0.5';
+                maBadgeEl.className = 'px-2.5 py-1 rounded-lg text-xs font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30 whitespace-nowrap';
+                maBadgeEl.textContent = 'Eladási jelzés';
+                maStatusEl.textContent = 'Az MA10 az MA30 alá került – a stratégia eladási jelzést ad a pozíció zárására.';
+            } else if (maDiff < 1.0) {
+                indMaDiffEl.className = 'font-mono font-bold text-base text-amber-400 mt-0.5';
+                maBadgeEl.className = 'px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 whitespace-nowrap';
+                maBadgeEl.textContent = 'Trendforduló közelében';
+                maStatusEl.textContent = 'Trendforduló közelében – ha az MA10 az MA30 alá esik, a robot automatikusan elad.';
+            } else {
+                indMaDiffEl.className = 'font-mono font-bold text-base text-[#14F195] mt-0.5';
+                maBadgeEl.className = 'px-2.5 py-1 rounded-lg text-xs font-bold bg-[#14F195]/15 text-[#14F195] border-[#14F195]/30 border whitespace-nowrap';
+                maBadgeEl.textContent = 'Emelkedő trend';
+                maStatusEl.textContent = 'Stabil emelkedő trend (MA10 magabiztosan az MA30 felett) – pozíció tartása javasolt.';
+            }
+
+            // ADX frissítése (50-es vizuális skála -> 20-as küszöb 40%-nál)
+            const indAdxEl = document.getElementById('indAdxVal');
+            indAdxEl.textContent = state.adx.toFixed(1);
+            indAdxEl.className = `font-mono text-xl font-extrabold ${state.adx >= 20 ? 'text-[#14F195]' : 'text-amber-400'}`;
+            const adxBarWidth = Math.min(100, Math.max(0, (state.adx / 50) * 100));
+            document.getElementById('adxProgressBar').style.width = `${adxBarWidth}%`;
+
+            // RSI frissítése (0-100 skála)
+            const indRsiEl = document.getElementById('indRsiVal');
+            indRsiEl.textContent = state.rsi.toFixed(1);
+            indRsiEl.className = `font-mono text-xl font-extrabold ${state.rsi > 70 ? 'text-rose-400' : 'text-cyan-400'}`;
+            const rsiBarWidth = Math.min(100, Math.max(0, state.rsi));
+            document.getElementById('rsiProgressBar').style.width = `${rsiBarWidth}%`;
+
+            // Stop-Loss vizuális távolságsáv
+            document.getElementById('slLevelBadge').textContent = `SL: $${stopLossPrice.toFixed(2)}`;
+            document.getElementById('barSlLabel').textContent = `$${stopLossPrice.toFixed(2)}`;
+            document.getElementById('barCurrentLabel').textContent = `$${state.price.toFixed(2)}`;
+            document.getElementById('barEntryLabel').textContent = `$${state.entryPrice.toFixed(2)}`;
+
+            const minBarPrice = Math.min(stopLossPrice * 0.985, state.price * 0.99);
+            const maxBarPrice = Math.max(state.entryPrice * 1.03, state.price * 1.015);
+            const span = Math.max(0.01, maxBarPrice - minBarPrice);
+
+            const slPos = ((stopLossPrice - minBarPrice) / span) * 100;
+            const entryPos = ((state.entryPrice - minBarPrice) / span) * 100;
+            const currentPos = ((state.price - minBarPrice) / span) * 100;
+
+            document.getElementById('barSlMarker').style.left = `${Math.min(96, Math.max(4, slPos))}%`;
+            document.getElementById('barEntryMarker').style.left = `${Math.min(96, Math.max(4, entryPos))}%`;
+            document.getElementById('barCurrentMarker').style.left = `${Math.min(96, Math.max(4, currentPos))}%`;
+
+            const slBarNote = document.getElementById('slBarNote');
+            if (stopLossTriggered) {
+                slBarNote.textContent = 'Figyelem: az árfolyam elérte vagy áttörte a -6%-os Stop-Loss szintet! A robot elad.';
+                slBarNote.className = 'text-xs text-rose-400 font-semibold';
+            } else if (pnlPct >= 0) {
+                slBarNote.textContent = `A pozíció nyereségben van (+$${Math.abs(pnlUsd).toFixed(2)}), a Stop-Loss $${distUsd.toFixed(2)}-ral lejjebb véd.`;
+                slBarNote.className = 'text-xs text-[#14F195]';
+            } else {
+                slBarNote.textContent = `A jelenlegi árfolyam még $${distUsd.toFixed(2)}-ral van a -6%-os vészfék ($${stopLossPrice.toFixed(2)}) felett.`;
+                slBarNote.className = 'text-xs text-slate-400';
+            }
+
+            // Szimulátor előnézeti dobozok frissítése
+            document.getElementById('simPriceDisplay').textContent = `$${state.price.toFixed(2)}`;
+            document.getElementById('simEquityPreview').textContent = `$${totalEquity.toFixed(2)}`;
+
+            const simPnlEl = document.getElementById('simPnlPctPreview');
+            simPnlEl.textContent = `${pnlSign}${pnlPct.toFixed(2)}%`;
+            simPnlEl.className = `font-mono font-bold text-sm mt-0.5 ${pnlColor}`;
+
+            const simDecEl = document.getElementById('simDecisionPreview');
+            simDecEl.textContent = decisionShort;
+            simDecEl.className = `font-bold text-xs mt-1 ${
+                stopLossTriggered ? 'text-rose-400' : (maSellSignal ? 'text-amber-400' : 'text-[#14F195]')
+            }`;
+        }
+
+        // --- 4. GITHUB NAPLÓ BEOLVASÓ (REGEX PARSER) ---
+        function parseGitHubLog(text) {
+            if (!text || !text.trim()) {
+                return { ok: false, message: 'Előbb illessz be egy naplórészletet!' };
+            }
+
+            // Sortörések összefűzése, hogy a mobil képernyőképekről másolt tördelt sorok is működjenek
+            const normalized = text.replace(/\s+/g, ' ').replace(/,/g, '.');
+            const updated = { ...baseState };
+            let matchCount = 0;
+
+            const usdtMatch = normalized.match(/Szabad egyenleg:\s*([\d.]+)\s*USDT/i);
+            if (usdtMatch) { updated.freeUsdt = parseFloat(usdtMatch[1]); matchCount++; }
+
+            const solMatch = normalized.match(/\|\s*([\d.]+)\s*SOL/i);
+            if (solMatch) { updated.solBalance = parseFloat(solMatch[1]); matchCount++; }
+
+            const sellableMatch = normalized.match(/TART[ÁA]S\s*->\s*([\d.]+)\s*SOL/i);
+            if (sellableMatch) { updated.sellableSol = parseFloat(sellableMatch[1]); matchCount++; }
+
+            const priceMatch = normalized.match(/[áa]r:\s*([\d.]+)/i);
+            if (priceMatch) { updated.price = parseFloat(priceMatch[1]); matchCount++; }
+
+            const ma10Match = normalized.match(/MA10:\s*([\d.]+)/i);
+            if (ma10Match) { updated.ma10 = parseFloat(ma10Match[1]); matchCount++; }
+
+            const ma30Match = normalized.match(/MA30:\s*([\d.]+)/i);
+            if (ma30Match) { updated.ma30 = parseFloat(ma30Match[1]); matchCount++; }
+
+            const adxMatch = normalized.match(/ADX:\s*([\d.]+)/i);
+            if (adxMatch) { updated.adx = parseFloat(adxMatch[1]); matchCount++; }
+
+            const rsiMatch = normalized.match(/RSI:\s*([\d.]+)/i);
+            if (rsiMatch) { updated.rsi = parseFloat(rsiMatch[1]); matchCount++; }
+
+            // Eredmény % alapján a pontos bekerülési ár visszaszámolása
+            const pnlMatch = normalized.match(/Eredm[ée]ny:\s*([+\-−]?[\d.]+)%/i);
+            if (pnlMatch && priceMatch) {
+                const parsedPnl = parseFloat(pnlMatch[1].replace('−', '-'));
+                if (1 + parsedPnl / 100 > 0) {
+                    updated.entryPrice = updated.price / (1 + parsedPnl / 100);
+                }
+                matchCount++;
+            }
+
+            if (matchCount === 0) {
+                return { ok: false, message: 'Nem találtam felismerhető robot adatokat a szövegben.' };
+            }
+
+            baseState = { ...updated };
+            currentState = { ...updated };
+
+            // Csúszka szinkronizálása
+            const slider = document.getElementById('priceSlider');
+            if (currentState.price < parseFloat(slider.min)) slider.min = Math.floor(currentState.price - 5);
+            if (currentState.price > parseFloat(slider.max)) slider.max = Math.ceil(currentState.price + 10);
+            slider.value = currentState.price.toFixed(2);
+
+            updateDashboard(currentState);
+            return { ok: true, message: `Sikeresen beolvasva (${matchCount} adat frissítve)!` };
+        }
+
+        // --- 5. ESEMÉNYKEZELŐK ---
+        document.addEventListener('DOMContentLoaded', () => {
+            initCharts();
+            updateDashboard(currentState);
+
+            // Fejléc gomb: görgetés az interaktív panelhez
+            document.getElementById('toggleToolsBtn').addEventListener('click', () => {
+                const panel = document.getElementById('interactivePanel');
+                panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                panel.classList.add('ring-2', 'ring-[#9945FF]');
+                setTimeout(() => panel.classList.remove('ring-2', 'ring-[#9945FF]'), 1200);
+            });
+
+            // Napló beolvasása gomb
+            document.getElementById('parseLogBtn').addEventListener('click', () => {
+                const rawText = document.getElementById('logInput').value;
+                const result = parseGitHubLog(rawText);
+                const feedback = document.getElementById('parseFeedback');
+                feedback.textContent = result.message;
+                feedback.className = `text-xs font-semibold ${result.ok ? 'text-[#14F195]' : 'text-rose-400'}`;
+            });
+
+            // Árfolyam-szimulátor csúszka
+            const priceSlider = document.getElementById('priceSlider');
+            priceSlider.addEventListener('input', (e) => {
+                currentState.price = parseFloat(e.target.value);
+                updateDashboard(currentState);
+            });
+
+            // Visszaállítás gomb
+            document.getElementById('resetSimBtn').addEventListener('click', () => {
+                currentState = { ...baseState };
+                priceSlider.value = currentState.price.toFixed(2);
+                updateDashboard(currentState);
+            });
+        });
+    </script>
+</body>
+</html>
