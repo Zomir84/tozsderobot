@@ -9,7 +9,7 @@ import yfinance as yf
 import ta
 
 # --- BEÁLLÍTÁSOK ---
-TESZT_MOD = True              # True = csak ellenőriz, False = éles kereskedés
+TESZT_MOD = Flase              # True = csak ellenőriz, False = éles kereskedés
 YF_SZIMBOLUM = "SOL-USD"      # Yahoo Finance jelölés
 PIONEX_SZIMBOLUM = "SOL_USDT" # Pionex pár
 ALAP_COIN = "SOL"             # Megvásárolt kriptó
