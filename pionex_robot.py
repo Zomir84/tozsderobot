@@ -9,7 +9,7 @@ import yfinance as yf
 import ta
 
 # --- BEÁLLÍTÁSOK ---
-TESZT_MOD = False              # True = csak ellenőriz, False = éles kereskedés
+TESZT_MOD = False             # Éles mód (a robot kereskedik)
 YF_SZIMBOLUM = "SOL-USD"      # Yahoo Finance jelölés
 PIONEX_SZIMBOLUM = "SOL_USDT" # Pionex pár
 ALAP_COIN = "SOL"             # Megvásárolt kriptó
@@ -19,14 +19,31 @@ MINIMUM_TET_USDT = 11.0       # Pionex minimum megbízás feletti biztonsági ha
 STOP_LOSS_SZAZALEK = 0.06     # 6%-os veszteségvágó (SOL-hoz ideális)
 TIZEDES_PONTOSSAG = 3         # BTC: 6, ETH: 5, SOL: 3, XRP: 1
 
-# --- SZŰRŐK (oldalazás és csúcson vétel ellen) ---
-ADX_MINIMUM = 20              # 20 alatt oldalazásnak tekintjük, nem vesz
+# --- SZŰRŐK ---
+ADX_MINIMUM = 20              # 20 alatt oldalazás, nem vesz
 RSI_MAXIMUM = 70              # 70 felett túlvásárolt, nem vesz
-# -------------------------------------------------
+# --------------
 
 API_KEY = os.environ["PIONEX_API_KEY"].strip()
 SECRET_KEY = os.environ["PIONEX_SECRET_KEY"].strip()
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 BASE_URL = "https://api.pionex.com"
+
+
+def telegram_uzenet(szoveg):
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        print(f"TELEGRAM HIBA: Hiányzó adat! Token megvan: {bool(TELEGRAM_TOKEN)} | Chat ID megvan: {bool(TELEGRAM_CHAT_ID)}")
+        return
+    try:
+        valasz = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": szoveg},
+            timeout=10
+        )
+        print(f"Telegram válasz ({valasz.status_code}): {valasz.text}")
+    except Exception as hiba:
+        print(f"Telegram értesítési hiba: {hiba}")
 
 
 def pionex_keres(method, path, params=None, body=None):
@@ -139,12 +156,13 @@ elif van_pozicio:
     veteli_ar = utolso_veteli_ar(PIONEX_SZIMBOLUM)
     eladhato = lefele_kerekit(szabad_kripto, TIZEDES_PONTOSSAG)
     profit_pct = ((ar - veteli_ar) / veteli_ar) * 100 if veteli_ar else 0.0
+    profit_usdt = (ar - veteli_ar) * eladhato if veteli_ar else 0.0
     stop_loss_aktiv = (ar <= veteli_ar * (1 - STOP_LOSS_SZAZALEK)) if veteli_ar else False
 
     if stop_loss_aktiv or ma10 < ma30:
         ok = f"STOP-LOSS (-{int(STOP_LOSS_SZAZALEK*100)}%)" if stop_loss_aktiv else "ELADÁSI JELZÉS (MA10 < MA30)"
         if TESZT_MOD:
-            print(f"[TESZT MÓD] {ok} -> {eladhato} {ALAP_COIN} eladása lenne ({profit_pct:+.2f}%).")
+            print(f"[TESZT MÓD] {ok} -> {eladhato} {ALAP_COIN} eladása lenne ({profit_pct:+.2f}%, {profit_usdt:+.2f} {JEGYZESI_COIN}).")
         else:
             print(f"{ok} -> {eladhato} {ALAP_COIN} eladása ({profit_pct:+.2f}%)...")
             pionex_keres("POST", "/api/v1/trade/order", body={
@@ -154,7 +172,28 @@ elif van_pozicio:
                 "size": f"{eladhato:.{TIZEDES_PONTOSSAG}f}"
             })
             print("Pozíció lezárva!")
+
+            time.sleep(2)
+            uj_usdt = szabad_egyenleg(JEGYZESI_COIN)
+            cimke = "🟢 NYERESÉG" if profit_usdt >= 0 else "🔴 VESZTESÉG"
+            telegram_uzenet(
+                f"{cimke} | {PIONEX_SZIMBOLUM} lezárva\n"
+                f"Ok: {ok}\n"
+                f"Eredmény: {profit_pct:+.2f}% ({profit_usdt:+.2f} {JEGYZESI_COIN})\n"
+                f"Eladási ár: {ar:.2f} {JEGYZESI_COIN}\n"
+                f"Új szabad egyenleg: {uj_usdt:.2f} {JEGYZESI_COIN}"
+            )
     else:
         print(f"TARTÁS -> {eladhato} {ALAP_COIN} (~{pozicio_ertek_usd:.2f} USD) | Eredmény: {profit_pct:+.2f}%")
 else:
     print("VÁRAKOZÁS -> Nincs nyitott pozíció és nincs vételi jelzés.")
+
+if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
+    allapot = f"Nyitott pozíció (~{pozicio_ertek_usd:.2f} USD)" if van_pozicio else "Nincs nyitott pozíció"
+    print("Telegram tesztüzenet küldése...")
+    telegram_uzenet(
+        f"🤖 Telegram teszt OK!\n"
+        f"{PIONEX_SZIMBOLUM} ár: {ar:.2f} {JEGYZESI_COIN}\n"
+        f"Állapot: {allapot}\n"
+        f"Szabad egyenleg: {szabad_usdt:.2f} {JEGYZESI_COIN}"
+    )
