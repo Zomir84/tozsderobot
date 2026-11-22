@@ -1,0 +1,27 @@
+name: Pionex Robot (Eles)
+
+on:
+  schedule:
+    - cron: '10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  futtatas:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kód letöltése
+        uses: actions/checkout@v4
+
+      - name: Python beállítása
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Csomagok telepítése
+        run: pip install -r requirements.txt
+
+      - name: Pionex robot futtatása
+        env:
+          PIONEX_API_KEY: ${{ secrets.PIONEX_API_KEY }}
+          PIONEX_SECRET_KEY: ${{ secrets.PIONEX_SECRET_KEY }}
+        run: python pionex_robot.py
