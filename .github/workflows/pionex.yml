@@ -27,3 +27,11 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python pionex_robot.py
+        if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
+    allapot = f"Nyitott pozíció (~{pozicio_ertek_usd:.2f} USD)" if van_pozicio else "Nincs nyitott pozíció"
+    telegram_uzenet(
+        f"🤖 Telegram teszt OK!\n"
+        f"{PIONEX_SZIMBOLUM} ár: {ar:.2f} {JEGYZESI_COIN}\n"
+        f"Állapot: {allapot}\n"
+        f"Szabad egyenleg: {szabad_usdt:.2f} {JEGYZESI_COIN}"
+    )
