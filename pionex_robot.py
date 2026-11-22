@@ -10,11 +10,12 @@ import ta
 
 # --- BEÁLLÍTÁSOK ---
 TESZT_MOD = True              # True = csak ellenőriz, False = éles kereskedés
-YF_SZIMBOLUM = "SOL-USD"      # Yahoo Finance jelölés (pl. BTC-USD, SOL-USD, XRP-USD)
+YF_SZIMBOLUM = "SOL-USD"      # Yahoo Finance jelölés
 PIONEX_SZIMBOLUM = "SOL_USDT" # Pionex pár
 ALAP_COIN = "SOL"             # Megvásárolt kriptó
 JEGYZESI_COIN = "USDT"        # Amivel fizetsz
-OSSZEG_USDT = 20              # Éles tét (min. 10-15 USDT)
+TET_SZAZALEK = 0.50           # A szabad USDT 50%-át költi egy vételre
+MINIMUM_TET_USDT = 11.0       # Pionex minimum megbízás feletti biztonsági határ
 STOP_LOSS_SZAZALEK = 0.06     # 6%-os veszteségvágó (SOL-hoz ideális)
 TIZEDES_PONTOSSAG = 3         # BTC: 6, ETH: 5, SOL: 3, XRP: 1
 
@@ -84,9 +85,14 @@ def lefele_kerekit(ertek, tizedes):
 # 1. API kapcsolat és szabad egyenlegek ellenőrzése
 szabad_usdt = szabad_egyenleg(JEGYZESI_COIN)
 szabad_kripto = szabad_egyenleg(ALAP_COIN)
-print(f"Pionex API kapcsolat OK! Szabad egyenleg: {szabad_usdt:.4f} {JEGYZESI_COIN} | {szabad_kripto:.6f} {ALAP_COIN}")
+veteli_osszeg = round(szabad_usdt * TET_SZAZALEK, 2)
 
-# 2. Órás gyertyák és indikátorok (10 napnyi adat kell az ADX pontos számításához)
+print(
+    f"Pionex API kapcsolat OK! Szabad egyenleg: {szabad_usdt:.4f} {JEGYZESI_COIN} "
+    f"(50% tét = {veteli_osszeg:.2f} {JEGYZESI_COIN}) | {szabad_kripto:.6f} {ALAP_COIN}"
+)
+
+# 2. Órás gyertyák és indikátorok
 adatok = yf.Ticker(YF_SZIMBOLUM).history(period="10d", interval="1h")
 adatok["MA10"] = ta.trend.SMAIndicator(close=adatok["Close"], window=10).sma_indicator()
 adatok["MA30"] = ta.trend.SMAIndicator(close=adatok["Close"], window=30).sma_indicator()
@@ -108,20 +114,24 @@ van_pozicio = pozicio_ertek_usd >= 10.0
 
 # 3. Döntés
 if ma10 > ma30 and not van_pozicio:
-    # Szűrők ellenőrzése vétel előtt
     if adx < ADX_MINIMUM:
         print(f"SZŰRŐ BLOKKOLTA -> Gyenge trend / oldalazás (ADX: {adx:.1f}, min. {ADX_MINIMUM} kell).")
     elif rsi > RSI_MAXIMUM:
         print(f"SZŰRŐ BLOKKOLTA -> Túlvásárolt piac (RSI: {rsi:.1f}, max. {RSI_MAXIMUM} lehet).")
+    elif veteli_osszeg < MINIMUM_TET_USDT:
+        print(
+            f"KEVÉS EGYENLEG -> A szabad {JEGYZESI_COIN} 50%-a ({veteli_osszeg:.2f}) "
+            f"kevesebb, mint a {MINIMUM_TET_USDT:.0f} {JEGYZESI_COIN} minimum tét."
+        )
     elif TESZT_MOD:
-        print(f"[TESZT MÓD] Minden feltétel teljesült! Vételi jelzés lenne ({OSSZEG_USDT} {JEGYZESI_COIN}).")
+        print(f"[TESZT MÓD] Minden feltétel teljesült! Vételi jelzés lenne ({veteli_osszeg:.2f} {JEGYZESI_COIN}).")
     else:
-        print(f"VÉTELI JELZÉS -> {OSSZEG_USDT} {JEGYZESI_COIN} értékű {PIONEX_SZIMBOLUM} vásárlása...")
+        print(f"VÉTELI JELZÉS -> {veteli_osszeg:.2f} {JEGYZESI_COIN} értékű {PIONEX_SZIMBOLUM} vásárlása...")
         eredmeny = pionex_keres("POST", "/api/v1/trade/order", body={
             "symbol": PIONEX_SZIMBOLUM,
             "side": "BUY",
             "type": "MARKET",
-            "amount": str(OSSZEG_USDT)
+            "amount": f"{veteli_osszeg:.2f}"
         })
         print(f"Éles vételi megbízás elküldve! ID: {eredmeny.get('orderId')}")
 
