@@ -15,9 +15,12 @@ YF_SZIMBOLUM = "SOL-USD"      # Yahoo Finance jelölés
 PIONEX_SZIMBOLUM = "SOL_USDT" # Pionex pár
 ALAP_COIN = "SOL"             # Megvásárolt kriptó
 JEGYZESI_COIN = "USDT"        # Amivel fizetsz
-TET_SZAZALEK = 0.99           # A szabad USDT 50%-át költi egy vételre
+TET_SZAZALEK = 0.99           # A szabad USDT 99%-át költi egy vételre
 MINIMUM_TET_USDT = 11.0       # Pionex minimum megbízás feletti biztonsági határ
-STOP_LOSS_SZAZALEK = 0.06     # 6%-os veszteségvágó (SOL-hoz ideális)
+STOP_LOSS_SZAZALEK = 0.06     # Alap 6%-os veszteségvágó
+TRAILING_AKTIVALAS = 0.04     # +4% nyereség felett kapcsol be a követő Stop-Loss
+TRAILING_TAVOLSAG = 0.03      # A csúcsártól 3%-ra követi az árfolyamot
+NULLSZALDO_PUFFER = 0.005     # Aktiválás után min. +0.5%-on véd (díjak felett)
 TIZEDES_PONTOSSAG = 3         # BTC: 6, ETH: 5, SOL: 3, XRP: 1
 
 # --- SZŰRŐK ---
@@ -131,12 +134,21 @@ def utolso_vetel_adatok(kotesek):
     }
 
 
+def elozo_allapot_betoltese():
+    try:
+        with open("status.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
 def lefele_kerekit(ertek, tizedes):
     szorzo = 10 ** tizedes
     return math.floor(ertek * szorzo) / szorzo
 
 
-# 1. API kapcsolat, szabad egyenlegek és legutóbbi kötések lekérése
+# 1. API kapcsolat, szabad egyenlegek és előző állapot betöltése
+elozo = elozo_allapot_betoltese()
 szabad_usdt = szabad_egyenleg(JEGYZESI_COIN)
 szabad_kripto = szabad_egyenleg(ALAP_COIN)
 veteli_osszeg = round(szabad_usdt * TET_SZAZALEK, 2)
@@ -145,7 +157,7 @@ vetel_info = utolso_vetel_adatok(kotesek)
 
 print(
     f"Pionex API kapcsolat OK! Szabad egyenleg: {szabad_usdt:.4f} {JEGYZESI_COIN} "
-    f"(50% tét = {veteli_osszeg:.2f} {JEGYZESI_COIN}) | {szabad_kripto:.6f} {ALAP_COIN}"
+    f"({int(TET_SZAZALEK*100)}% tét = {veteli_osszeg:.2f} {JEGYZESI_COIN}) | {szabad_kripto:.6f} {ALAP_COIN}"
 )
 
 # 2. Órás gyertyák és indikátorok
@@ -177,6 +189,8 @@ veteli_koltseg = vetel_info["cost_usdt"] if (van_pozicio and vetel_info) else No
 profit_pct = 0.0
 profit_usdt = 0.0
 stop_loss_ar = None
+legmagasabb_ar = None
+trailing_aktiv = False
 
 # 3. Döntés
 if ma10 > ma30 and not van_pozicio:
@@ -190,7 +204,7 @@ if ma10 > ma30 and not van_pozicio:
         print(f"SZŰRŐ BLOKKOLTA -> {dontes_reszlet}")
     elif veteli_osszeg < MINIMUM_TET_USDT:
         dontes = "KEVÉS EGYENLEG"
-        dontes_reszlet = f"Az 50%-os tét ({veteli_osszeg:.2f} {JEGYZESI_COIN}) a {MINIMUM_TET_USDT:.0f} {JEGYZESI_COIN} minimum alatt van."
+        dontes_reszlet = f"A {int(TET_SZAZALEK*100)}%-os tét ({veteli_osszeg:.2f} {JEGYZESI_COIN}) a {MINIMUM_TET_USDT:.0f} {JEGYZESI_COIN} minimum alatt van."
         print(f"KEVÉS EGYENLEG -> {dontes_reszlet}")
     elif TESZT_MOD:
         dontes = "TESZT VÉTEL"
@@ -217,6 +231,7 @@ if ma10 > ma30 and not van_pozicio:
         veteli_ido = vetel_info["time"] if vetel_info else datetime.now(timezone.utc).isoformat()
         veteli_meret = vetel_info["size"] if vetel_info else szabad_kripto
         veteli_koltseg = vetel_info["cost_usdt"] if vetel_info else round(szabad_kripto * ar, 2)
+        legmagasabb_ar = max(ar, veteli_ar)
         stop_loss_ar = veteli_ar * (1 - STOP_LOSS_SZAZALEK)
         dontes = "VÉTEL"
         dontes_reszlet = f"Új pozíció nyitva ~{veteli_ar:.2f} {JEGYZESI_COIN} áron."
@@ -225,11 +240,43 @@ elif van_pozicio:
     eladhato = lefele_kerekit(szabad_kripto, TIZEDES_PONTOSSAG)
     profit_pct = ((ar - veteli_ar) / veteli_ar) * 100 if veteli_ar else 0.0
     profit_usdt = (ar - veteli_ar) * eladhato if veteli_ar else 0.0
-    stop_loss_ar = veteli_ar * (1 - STOP_LOSS_SZAZALEK) if veteli_ar else None
+
+    # Csúcsár és Követő Stop-Loss (Trailing Stop) számítása
+    azonos_pozicio = (
+        elozo.get("has_position")
+        and elozo.get("entry_time") == veteli_ido
+        and elozo.get("highest_price") is not None
+    )
+    if azonos_pozicio:
+        legmagasabb_ar = max(float(elozo["highest_price"]), ar, veteli_ar or ar)
+    else:
+        legmagasabb_ar = max(ar, veteli_ar or ar)
+
+    if veteli_ar:
+        alap_sl = veteli_ar * (1 - STOP_LOSS_SZAZALEK)
+        if legmagasabb_ar >= veteli_ar * (1 + TRAILING_AKTIVALAS):
+            trailing_aktiv = True
+            koveto_sl = max(
+                veteli_ar * (1 + NULLSZALDO_PUFFER),
+                legmagasabb_ar * (1 - TRAILING_TAVOLSAG)
+            )
+            stop_loss_ar = max(alap_sl, koveto_sl)
+        else:
+            trailing_aktiv = False
+            stop_loss_ar = alap_sl
+
     stop_loss_aktiv = (ar <= stop_loss_ar) if stop_loss_ar else False
 
     if stop_loss_aktiv or ma10 < ma30:
-        ok = f"STOP-LOSS (-{int(STOP_LOSS_SZAZALEK*100)}%)" if stop_loss_aktiv else "ELADÁSI JELZÉS (MA10 < MA30)"
+        if stop_loss_aktiv:
+            ok = (
+                f"KÖVETŐ STOP-LOSS (Csúcs: ${legmagasabb_ar:.2f})"
+                if trailing_aktiv
+                else f"STOP-LOSS (-{int(STOP_LOSS_SZAZALEK*100)}%)"
+            )
+        else:
+            ok = "ELADÁSI JELZÉS (MA10 < MA30)"
+
         if TESZT_MOD:
             dontes = "TESZT ELADÁS"
             dontes_reszlet = f"[TESZT MÓD] {ok} -> {eladhato} {ALAP_COIN} eladása lenne ({profit_pct:+.2f}%)."
@@ -252,6 +299,9 @@ elif van_pozicio:
             veteli_osszeg = round(szabad_usdt * TET_SZAZALEK, 2)
             pozicio_ertek_usd = szabad_kripto * ar
             van_pozicio = False
+            legmagasabb_ar = None
+            trailing_aktiv = False
+            stop_loss_ar = None
             dontes = "ELADÁS"
             dontes_reszlet = f"{ok} | Eredmény: {profit_pct:+.2f}% ({profit_usdt:+.2f} {JEGYZESI_COIN})"
 
@@ -265,7 +315,8 @@ elif van_pozicio:
             )
     else:
         dontes = "TARTÁS"
-        dontes_reszlet = f"{eladhato} {ALAP_COIN} (~{pozicio_ertek_usd:.2f} USD) | Eredmény: {profit_pct:+.2f}%"
+        sl_info = f" | Követő SL: ${stop_loss_ar:.2f} (Csúcs: ${legmagasabb_ar:.2f})" if trailing_aktiv else f" | SL: ${stop_loss_ar:.2f}"
+        dontes_reszlet = f"{eladhato} {ALAP_COIN} (~{pozicio_ertek_usd:.2f} USD) | Eredmény: {profit_pct:+.2f}%{sl_info}"
         print(f"TARTÁS -> {dontes_reszlet}")
 else:
     print(f"VÁRAKOZÁS -> {dontes_reszlet}")
@@ -291,6 +342,8 @@ dashboard_adat = {
     "entry_time": veteli_ido,
     "entry_size": round(veteli_meret, 6) if veteli_meret else None,
     "entry_cost_usdt": round(veteli_koltseg, 2) if veteli_koltseg else None,
+    "highest_price": round(legmagasabb_ar, 2) if legmagasabb_ar else None,
+    "trailing_active": trailing_aktiv,
     "stop_loss_price": round(stop_loss_ar, 2) if stop_loss_ar else None,
     "stop_loss_pct": round(STOP_LOSS_SZAZALEK * 100, 1),
     "profit_pct": round(profit_pct, 2),
