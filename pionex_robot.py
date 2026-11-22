@@ -4,6 +4,7 @@ import hmac
 import json
 import math
 import hashlib
+from datetime import datetime, timezone
 import requests
 import yfinance as yf
 import ta
@@ -129,19 +130,31 @@ print(f"{PIONEX_SZIMBOLUM} ár: {ar:.2f} | MA10: {ma10:.2f} | MA30: {ma30:.2f} |
 pozicio_ertek_usd = szabad_kripto * ar
 van_pozicio = pozicio_ertek_usd >= 10.0
 
+dontes = "VÁRAKOZÁS"
+dontes_reszlet = "Nincs nyitott pozíció és nincs vételi jelzés."
+veteli_ar = None
+profit_pct = 0.0
+profit_usdt = 0.0
+stop_loss_ar = None
+
 # 3. Döntés
 if ma10 > ma30 and not van_pozicio:
     if adx < ADX_MINIMUM:
-        print(f"SZŰRŐ BLOKKOLTA -> Gyenge trend / oldalazás (ADX: {adx:.1f}, min. {ADX_MINIMUM} kell).")
+        dontes = "SZŰRŐ BLOKKOLTA"
+        dontes_reszlet = f"Gyenge trend / oldalazás (ADX: {adx:.1f}, min. {ADX_MINIMUM} kell)."
+        print(f"SZŰRŐ BLOKKOLTA -> {dontes_reszlet}")
     elif rsi > RSI_MAXIMUM:
-        print(f"SZŰRŐ BLOKKOLTA -> Túlvásárolt piac (RSI: {rsi:.1f}, max. {RSI_MAXIMUM} lehet).")
+        dontes = "SZŰRŐ BLOKKOLTA"
+        dontes_reszlet = f"Túlvásárolt piac (RSI: {rsi:.1f}, max. {RSI_MAXIMUM} lehet)."
+        print(f"SZŰRŐ BLOKKOLTA -> {dontes_reszlet}")
     elif veteli_osszeg < MINIMUM_TET_USDT:
-        print(
-            f"KEVÉS EGYENLEG -> A szabad {JEGYZESI_COIN} 50%-a ({veteli_osszeg:.2f}) "
-            f"kevesebb, mint a {MINIMUM_TET_USDT:.0f} {JEGYZESI_COIN} minimum tét."
-        )
+        dontes = "KEVÉS EGYENLEG"
+        dontes_reszlet = f"Az 50%-os tét ({veteli_osszeg:.2f} {JEGYZESI_COIN}) a {MINIMUM_TET_USDT:.0f} {JEGYZESI_COIN} minimum alatt van."
+        print(f"KEVÉS EGYENLEG -> {dontes_reszlet}")
     elif TESZT_MOD:
-        print(f"[TESZT MÓD] Minden feltétel teljesült! Vételi jelzés lenne ({veteli_osszeg:.2f} {JEGYZESI_COIN}).")
+        dontes = "TESZT VÉTEL"
+        dontes_reszlet = f"[TESZT MÓD] Vételi jelzés lenne ({veteli_osszeg:.2f} {JEGYZESI_COIN})."
+        print(dontes_reszlet)
     else:
         print(f"VÉTELI JELZÉS -> {veteli_osszeg:.2f} {JEGYZESI_COIN} értékű {PIONEX_SZIMBOLUM} vásárlása...")
         eredmeny = pionex_keres("POST", "/api/v1/trade/order", body={
@@ -151,18 +164,31 @@ if ma10 > ma30 and not van_pozicio:
             "amount": f"{veteli_osszeg:.2f}"
         })
         print(f"Éles vételi megbízás elküldve! ID: {eredmeny.get('orderId')}")
+        time.sleep(2)
+        szabad_usdt = szabad_egyenleg(JEGYZESI_COIN)
+        szabad_kripto = szabad_egyenleg(ALAP_COIN)
+        veteli_osszeg = round(szabad_usdt * TET_SZAZALEK, 2)
+        pozicio_ertek_usd = szabad_kripto * ar
+        van_pozicio = True
+        veteli_ar = ar
+        stop_loss_ar = veteli_ar * (1 - STOP_LOSS_SZAZALEK)
+        dontes = "VÉTEL"
+        dontes_reszlet = f"Új pozíció nyitva ~{ar:.2f} {JEGYZESI_COIN} áron."
 
 elif van_pozicio:
     veteli_ar = utolso_veteli_ar(PIONEX_SZIMBOLUM)
     eladhato = lefele_kerekit(szabad_kripto, TIZEDES_PONTOSSAG)
     profit_pct = ((ar - veteli_ar) / veteli_ar) * 100 if veteli_ar else 0.0
     profit_usdt = (ar - veteli_ar) * eladhato if veteli_ar else 0.0
-    stop_loss_aktiv = (ar <= veteli_ar * (1 - STOP_LOSS_SZAZALEK)) if veteli_ar else False
+    stop_loss_ar = veteli_ar * (1 - STOP_LOSS_SZAZALEK) if veteli_ar else None
+    stop_loss_aktiv = (ar <= stop_loss_ar) if stop_loss_ar else False
 
     if stop_loss_aktiv or ma10 < ma30:
         ok = f"STOP-LOSS (-{int(STOP_LOSS_SZAZALEK*100)}%)" if stop_loss_aktiv else "ELADÁSI JELZÉS (MA10 < MA30)"
         if TESZT_MOD:
-            print(f"[TESZT MÓD] {ok} -> {eladhato} {ALAP_COIN} eladása lenne ({profit_pct:+.2f}%, {profit_usdt:+.2f} {JEGYZESI_COIN}).")
+            dontes = "TESZT ELADÁS"
+            dontes_reszlet = f"[TESZT MÓD] {ok} -> {eladhato} {ALAP_COIN} eladása lenne ({profit_pct:+.2f}%)."
+            print(dontes_reszlet)
         else:
             print(f"{ok} -> {eladhato} {ALAP_COIN} eladása ({profit_pct:+.2f}%)...")
             pionex_keres("POST", "/api/v1/trade/order", body={
@@ -175,6 +201,14 @@ elif van_pozicio:
 
             time.sleep(2)
             uj_usdt = szabad_egyenleg(JEGYZESI_COIN)
+            szabad_usdt = uj_usdt
+            szabad_kripto = szabad_egyenleg(ALAP_COIN)
+            veteli_osszeg = round(szabad_usdt * TET_SZAZALEK, 2)
+            pozicio_ertek_usd = szabad_kripto * ar
+            van_pozicio = False
+            dontes = "ELADÁS"
+            dontes_reszlet = f"{ok} | Eredmény: {profit_pct:+.2f}% ({profit_usdt:+.2f} {JEGYZESI_COIN})"
+
             cimke = "🟢 NYERESÉG" if profit_usdt >= 0 else "🔴 VESZTESÉG"
             telegram_uzenet(
                 f"{cimke} | {PIONEX_SZIMBOLUM} lezárva\n"
@@ -184,9 +218,43 @@ elif van_pozicio:
                 f"Új szabad egyenleg: {uj_usdt:.2f} {JEGYZESI_COIN}"
             )
     else:
-        print(f"TARTÁS -> {eladhato} {ALAP_COIN} (~{pozicio_ertek_usd:.2f} USD) | Eredmény: {profit_pct:+.2f}%")
+        dontes = "TARTÁS"
+        dontes_reszlet = f"{eladhato} {ALAP_COIN} (~{pozicio_ertek_usd:.2f} USD) | Eredmény: {profit_pct:+.2f}%"
+        print(f"TARTÁS -> {dontes_reszlet}")
 else:
-    print("VÁRAKOZÁS -> Nincs nyitott pozíció és nincs vételi jelzés.")
+    print(f"VÁRAKOZÁS -> {dontes_reszlet}")
+
+# 4. Aktuális állapot mentése a telefonos vezérlőpultnak (status.json)
+dashboard_adat = {
+    "updated_at": datetime.now(timezone.utc).isoformat(),
+    "symbol": PIONEX_SZIMBOLUM,
+    "base_coin": ALAP_COIN,
+    "quote_coin": JEGYZESI_COIN,
+    "price": round(ar, 2),
+    "ma10": round(ma10, 2),
+    "ma30": round(ma30, 2),
+    "adx": round(adx, 1),
+    "rsi": round(rsi, 1),
+    "free_usdt": round(szabad_usdt, 4),
+    "free_crypto": round(szabad_kripto, 6),
+    "next_bet_usdt": round(veteli_osszeg, 2),
+    "position_usd": round(pozicio_ertek_usd, 2),
+    "total_usd": round(szabad_usdt + pozicio_ertek_usd, 2),
+    "has_position": van_pozicio,
+    "entry_price": round(veteli_ar, 2) if veteli_ar else None,
+    "stop_loss_price": round(stop_loss_ar, 2) if stop_loss_ar else None,
+    "stop_loss_pct": round(STOP_LOSS_SZAZALEK * 100, 1),
+    "profit_pct": round(profit_pct, 2),
+    "profit_usdt": round(profit_usdt, 2),
+    "status": dontes,
+    "status_detail": dontes_reszlet,
+    "adx_min": ADX_MINIMUM,
+    "rsi_max": RSI_MAXIMUM
+}
+
+with open("status.json", "w", encoding="utf-8") as f:
+    json.dump(dashboard_adat, f, ensure_ascii=False, indent=2)
+print("Dashboard status.json sikeresen elmentve.")
 
 if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
     allapot = f"Nyitott pozíció (~{pozicio_ertek_usd:.2f} USD)" if van_pozicio else "Nincs nyitott pozíció"
