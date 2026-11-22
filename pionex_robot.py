@@ -87,12 +87,48 @@ def szabad_egyenleg(coin):
     return 0.0
 
 
-def utolso_veteli_ar(szimbolum):
+def utolso_kotesek(szimbolum, limit=15):
     adat = pionex_keres("GET", "/api/v1/trade/fills", params={"symbol": szimbolum})
-    for f in adat.get("fills", []):
-        if f.get("side") == "BUY":
-            return float(f["price"])
-    return None
+    fills = adat.get("fills", [])
+    kotesek = []
+    for f in fills[:limit]:
+        ar_f = float(f["price"])
+        meret_f = float(f["size"])
+        ts = f.get("timestamp")
+        ido_iso = None
+        if ts:
+            ts_num = float(ts)
+            ts_sec = ts_num / 1000.0 if ts_num > 1e12 else ts_num
+            ido_iso = datetime.fromtimestamp(ts_sec, tz=timezone.utc).isoformat()
+        kotesek.append({
+            "order_id": f.get("orderId"),
+            "side": f.get("side"),
+            "price": round(ar_f, 2),
+            "size": round(meret_f, 6),
+            "cost_usdt": round(ar_f * meret_f, 2),
+            "time": ido_iso
+        })
+    return kotesek
+
+
+def utolso_vetel_adatok(kotesek):
+    elso_buy = next((k for k in kotesek if k.get("side") == "BUY"), None)
+    if not elso_buy:
+        return None
+    oid = elso_buy.get("order_id")
+    if oid is not None:
+        azonos = [k for k in kotesek if k.get("side") == "BUY" and k.get("order_id") == oid]
+    else:
+        azonos = [elso_buy]
+    ossz_meret = sum(k["size"] for k in azonos)
+    ossz_usdt = sum(k["price"] * k["size"] for k in azonos)
+    atlag_ar = ossz_usdt / ossz_meret if ossz_meret > 0 else elso_buy["price"]
+    return {
+        "price": round(atlag_ar, 2),
+        "size": round(ossz_meret, 6),
+        "cost_usdt": round(ossz_usdt, 2),
+        "time": elso_buy["time"]
+    }
 
 
 def lefele_kerekit(ertek, tizedes):
@@ -100,10 +136,12 @@ def lefele_kerekit(ertek, tizedes):
     return math.floor(ertek * szorzo) / szorzo
 
 
-# 1. API kapcsolat és szabad egyenlegek ellenőrzése
+# 1. API kapcsolat, szabad egyenlegek és legutóbbi kötések lekérése
 szabad_usdt = szabad_egyenleg(JEGYZESI_COIN)
 szabad_kripto = szabad_egyenleg(ALAP_COIN)
 veteli_osszeg = round(szabad_usdt * TET_SZAZALEK, 2)
+kotesek = utolso_kotesek(PIONEX_SZIMBOLUM)
+vetel_info = utolso_vetel_adatok(kotesek)
 
 print(
     f"Pionex API kapcsolat OK! Szabad egyenleg: {szabad_usdt:.4f} {JEGYZESI_COIN} "
@@ -132,7 +170,10 @@ van_pozicio = pozicio_ertek_usd >= 10.0
 
 dontes = "VÁRAKOZÁS"
 dontes_reszlet = "Nincs nyitott pozíció és nincs vételi jelzés."
-veteli_ar = None
+veteli_ar = vetel_info["price"] if (van_pozicio and vetel_info) else None
+veteli_ido = vetel_info["time"] if (van_pozicio and vetel_info) else None
+veteli_meret = vetel_info["size"] if (van_pozicio and vetel_info) else None
+veteli_koltseg = vetel_info["cost_usdt"] if (van_pozicio and vetel_info) else None
 profit_pct = 0.0
 profit_usdt = 0.0
 stop_loss_ar = None
@@ -167,16 +208,20 @@ if ma10 > ma30 and not van_pozicio:
         time.sleep(2)
         szabad_usdt = szabad_egyenleg(JEGYZESI_COIN)
         szabad_kripto = szabad_egyenleg(ALAP_COIN)
+        kotesek = utolso_kotesek(PIONEX_SZIMBOLUM)
+        vetel_info = utolso_vetel_adatok(kotesek)
         veteli_osszeg = round(szabad_usdt * TET_SZAZALEK, 2)
         pozicio_ertek_usd = szabad_kripto * ar
         van_pozicio = True
-        veteli_ar = ar
+        veteli_ar = vetel_info["price"] if vetel_info else ar
+        veteli_ido = vetel_info["time"] if vetel_info else datetime.now(timezone.utc).isoformat()
+        veteli_meret = vetel_info["size"] if vetel_info else szabad_kripto
+        veteli_koltseg = vetel_info["cost_usdt"] if vetel_info else round(szabad_kripto * ar, 2)
         stop_loss_ar = veteli_ar * (1 - STOP_LOSS_SZAZALEK)
         dontes = "VÉTEL"
-        dontes_reszlet = f"Új pozíció nyitva ~{ar:.2f} {JEGYZESI_COIN} áron."
+        dontes_reszlet = f"Új pozíció nyitva ~{veteli_ar:.2f} {JEGYZESI_COIN} áron."
 
 elif van_pozicio:
-    veteli_ar = utolso_veteli_ar(PIONEX_SZIMBOLUM)
     eladhato = lefele_kerekit(szabad_kripto, TIZEDES_PONTOSSAG)
     profit_pct = ((ar - veteli_ar) / veteli_ar) * 100 if veteli_ar else 0.0
     profit_usdt = (ar - veteli_ar) * eladhato if veteli_ar else 0.0
@@ -203,6 +248,7 @@ elif van_pozicio:
             uj_usdt = szabad_egyenleg(JEGYZESI_COIN)
             szabad_usdt = uj_usdt
             szabad_kripto = szabad_egyenleg(ALAP_COIN)
+            kotesek = utolso_kotesek(PIONEX_SZIMBOLUM)
             veteli_osszeg = round(szabad_usdt * TET_SZAZALEK, 2)
             pozicio_ertek_usd = szabad_kripto * ar
             van_pozicio = False
@@ -242,6 +288,9 @@ dashboard_adat = {
     "total_usd": round(szabad_usdt + pozicio_ertek_usd, 2),
     "has_position": van_pozicio,
     "entry_price": round(veteli_ar, 2) if veteli_ar else None,
+    "entry_time": veteli_ido,
+    "entry_size": round(veteli_meret, 6) if veteli_meret else None,
+    "entry_cost_usdt": round(veteli_koltseg, 2) if veteli_koltseg else None,
     "stop_loss_price": round(stop_loss_ar, 2) if stop_loss_ar else None,
     "stop_loss_pct": round(STOP_LOSS_SZAZALEK * 100, 1),
     "profit_pct": round(profit_pct, 2),
@@ -249,7 +298,8 @@ dashboard_adat = {
     "status": dontes,
     "status_detail": dontes_reszlet,
     "adx_min": ADX_MINIMUM,
-    "rsi_max": RSI_MAXIMUM
+    "rsi_max": RSI_MAXIMUM,
+    "recent_trades": kotesek
 }
 
 with open("status.json", "w", encoding="utf-8") as f:
