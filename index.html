@@ -32,6 +32,10 @@
       -webkit-tap-highlight-color: transparent;
       user-select: none;
     }
+    input {
+      user-select: text;
+      -webkit-user-select: text;
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
       background: var(--bg);
@@ -168,6 +172,80 @@
       height: 2px;
       vertical-align: middle;
       margin-right: 4px;
+    }
+
+    /* Revolut USD kifizetés kártya */
+    .rev-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .rev-header .section-title { margin-bottom: 0; }
+    .mini-btn {
+      background: var(--card-inner);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 4px 10px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .mini-btn:active { transform: scale(0.95); }
+    .rev-highlight {
+      background: var(--card-inner);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .rev-amount { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; }
+    .rev-status { font-size: 0.72rem; color: var(--muted); margin-top: 3px; }
+    .rev-settings {
+      display: none;
+      background: var(--card-inner);
+      border: 1px solid #334155;
+      border-radius: 14px;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    .rev-settings.open { display: block; }
+    .rev-input-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .rev-field label {
+      display: block;
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .rev-field input {
+      width: 100%;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 9px;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+    .save-btn {
+      width: 100%;
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 9px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
     }
 
     .ind-box {
@@ -327,6 +405,49 @@
       </div>
     </div>
 
+    <!-- REVOLUT USD KIFIZETÉS / KIVEHETŐ NYERESÉG -->
+    <div class="card">
+      <div class="rev-header">
+        <div class="section-title">💸 Revolut USD kifizetés</div>
+        <button class="mini-btn" onclick="toggleRevSettings()">⚙️ Beállítás</button>
+      </div>
+
+      <div id="revSettingsBox" class="rev-settings">
+        <div class="rev-input-grid">
+          <div class="rev-field">
+            <label for="startCapInput">Induló tőke ($)</label>
+            <input type="number" id="startCapInput" step="0.01" min="0" inputmode="decimal" />
+          </div>
+          <div class="rev-field">
+            <label for="feeInput">Utalási/váltási díj ($)</label>
+            <input type="number" id="feeInput" step="0.1" min="0" inputmode="decimal" />
+          </div>
+        </div>
+        <button class="save-btn" onclick="saveRevSettings()">Mentés</button>
+      </div>
+
+      <div class="rev-highlight">
+        <div>
+          <div class="kpi-label">Utalható Revolut USD (díj után)</div>
+          <div class="rev-status" id="revStatusText">Számítás...</div>
+        </div>
+        <div class="rev-amount" id="revNetUsd">$0.00</div>
+      </div>
+
+      <div class="buy-row">
+        <span>Induló tőke</span>
+        <strong id="revStartCap">$30.00</strong>
+      </div>
+      <div class="buy-row">
+        <span>Teljes nettó nyereség</span>
+        <strong id="revTotalProfit">$0.00</strong>
+      </div>
+      <div class="buy-row">
+        <span>Azonnal utalható (szabad USDT-ből)</span>
+        <strong id="revImmediateUsd">$0.00</strong>
+      </div>
+    </div>
+
     <!-- LEGUTÓBBI BEVÁSÁRLÁS -->
     <div class="card" id="entryCard">
       <div class="section-title">Legutóbbi bevásárlás</div>
@@ -445,7 +566,7 @@
       rsi: 43.9,
       free_usdt: 14.7008,
       free_crypto: 0.218743,
-      next_bet_usdt: 7.35,
+      next_bet_usdt: 14.55,
       position_usd: 15.13,
       total_usd: 29.83,
       has_position: true,
@@ -474,6 +595,66 @@
     let currentTf = '1d';
     let charts = {};
     let liveChart = null;
+
+    function getRevConfig() {
+      const startCap = parseFloat(localStorage.getItem('pionex_start_cap'));
+      const fee = parseFloat(localStorage.getItem('pionex_rev_fee'));
+      return {
+        startCap: isNaN(startCap) ? 30.0 : startCap,
+        fee: isNaN(fee) ? 1.0 : fee
+      };
+    }
+
+    function toggleRevSettings() {
+      const box = document.getElementById('revSettingsBox');
+      const cfg = getRevConfig();
+      document.getElementById('startCapInput').value = cfg.startCap.toFixed(2);
+      document.getElementById('feeInput').value = cfg.fee.toFixed(2);
+      box.classList.toggle('open');
+    }
+
+    function saveRevSettings() {
+      const cap = parseFloat(document.getElementById('startCapInput').value);
+      const fee = parseFloat(document.getElementById('feeInput').value);
+      if (!isNaN(cap) && cap >= 0) localStorage.setItem('pionex_start_cap', cap.toString());
+      if (!isNaN(fee) && fee >= 0) localStorage.setItem('pionex_rev_fee', fee.toString());
+      document.getElementById('revSettingsBox').classList.remove('open');
+      updateRevolutCard(currentData);
+    }
+
+    function updateRevolutCard(d) {
+      const { startCap, fee } = getRevConfig();
+      const totalUsd = Number(d.total_usd) || 0;
+      const freeUsdt = Number(d.free_usdt) || 0;
+
+      const netProfit = totalUsd - startCap;
+      const netAfterFee = Math.max(0, netProfit - fee);
+      const immediateProfit = Math.max(0, Math.min(netProfit, freeUsdt));
+      const immediateAfterFee = Math.max(0, immediateProfit - fee);
+
+      document.getElementById('revStartCap').textContent = `$${startCap.toFixed(2)}`;
+
+      const profEl = document.getElementById('revTotalProfit');
+      profEl.textContent = `${netProfit >= 0 ? '+' : ''}$${netProfit.toFixed(2)}`;
+      profEl.className = netProfit > 0 ? 'pos' : (netProfit < 0 ? 'neg' : '');
+
+      const revEl = document.getElementById('revNetUsd');
+      revEl.textContent = `$${netAfterFee.toFixed(2)}`;
+      revEl.className = 'rev-amount ' + (netAfterFee > 0 ? 'pos' : '');
+
+      document.getElementById('revImmediateUsd').textContent = `$${immediateAfterFee.toFixed(2)}`;
+
+      const stEl = document.getElementById('revStatusText');
+      if (netProfit <= 0) {
+        stEl.textContent = `Még $${Math.abs(netProfit).toFixed(2)} kell a tőkéd feletti nyereséghez`;
+      } else if (netProfit <= fee) {
+        stEl.textContent = `A nyereség még nem fedezi a $${fee.toFixed(2)} utalási díjat`;
+      } else if (freeUsdt >= netProfit) {
+        stEl.textContent = `✅ Szabad USDT-ben van, azonnal utalható ($${fee.toFixed(2)} díjjal)`;
+      } else {
+        stEl.textContent = `⏳ Nyitott SOL-ban van (eladás után utalható)`;
+      }
+    }
 
     function getBinanceSymbol(d) {
       return (d.symbol || 'SOL_USDT').replace('_', '');
@@ -636,182 +817,4 @@
     function drawDoughnut(id, labels, values, colors) {
       if (charts[id]) charts[id].destroy();
       charts[id] = new Chart(document.getElementById(id), {
-        type: 'doughnut',
-        data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0 }] },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          cutout: '65%',
-          plugins: {
-            legend: { position: 'bottom', labels: { color: '#cbd5e1', boxWidth: 10, font: { size: 12 } } }
-          }
-        }
-      });
-    }
-
-    function renderCharts(d) {
-      drawDoughnut('portfolioChart', ['Szabad USDT', 'Nyitott SOL'],
-        [Math.max(0, d.free_usdt), Math.max(0, d.position_usd)], ['#3b82f6', '#8b5cf6']);
-
-      const reserve = Math.max(0, d.free_usdt - d.next_bet_usdt);
-      drawDoughnut('allocChart', ['Nyitott pozíció', 'Köv. 99% tét', 'Tartalék'],
-        [Math.max(0, d.position_usd), Math.max(0, d.next_bet_usdt), reserve], ['#8b5cf6', '#10b981', '#334155']);
-
-      const slMax = d.stop_loss_pct || 6;
-      const used = d.has_position && d.profit_pct < 0 ? Math.min(slMax, Math.abs(d.profit_pct)) : 0;
-      drawDoughnut('slChart', ['Felhasznált mínusz (%)', 'Maradék puffer (%)'],
-        [Number(used.toFixed(2)), Number(Math.max(0, slMax - used).toFixed(2))], ['#ef4444', '#10b981']);
-    }
-
-    function renderTrades(trades) {
-      const container = document.getElementById('tradesList');
-      if (!trades || trades.length === 0) {
-        container.innerHTML = '<p style="font-size: 0.82rem; color: var(--muted);">Még nincsenek betöltött kötések. Várd meg a következő 10 perces robot-futást (vagy indíts egy Run workflow-t).</p>';
-        return;
-      }
-      container.innerHTML = trades.map(t => {
-        const isBuy = t.side === 'BUY';
-        return `
-          <div class="trade-item">
-            <div class="trade-left">
-              <span class="trade-pill ${isBuy ? 'buy' : 'sell'}">${isBuy ? 'VÉTEL' : 'ELADÁS'}</span>
-              <span class="trade-time">${formatHuDate(t.time)}</span>
-            </div>
-            <div class="trade-right">
-              <span class="trade-main">$${Number(t.cost_usdt).toFixed(2)} USDT</span>
-              <span class="trade-sub">${Number(t.size).toFixed(4)} SOL @ $${Number(t.price).toFixed(2)}</span>
-            </div>
-          </div>
-        `;
-      }).join('');
-    }
-
-    function render(d) {
-      currentData = d;
-      const badge = document.getElementById('statusBadge');
-      badge.textContent = d.status || 'ISMERETLEN';
-      badge.className = 'badge ' + (
-        d.status === 'VÉTEL' ? 'green' :
-        d.status === 'ELADÁS' ? 'red' :
-        d.status === 'TARTÁS' ? '' : 'amber'
-      );
-
-      document.getElementById('totalUsd').textContent = `$${Number(d.total_usd).toFixed(2)}`;
-      document.getElementById('statusDetail').textContent = d.has_position
-        ? `${Number(d.free_crypto).toFixed(3)} SOL (~$${Number(d.position_usd).toFixed(2)})`
-        : 'Nincs nyitott pozíció';
-
-      const pb = document.getElementById('profitBadge');
-      if (d.has_position) {
-        const s = d.profit_pct >= 0 ? '+' : '';
-        pb.textContent = `${s}${Number(d.profit_pct).toFixed(2)}% (${s}$${Number(d.profit_usdt).toFixed(2)})`;
-        pb.className = d.profit_pct >= 0 ? 'pos' : 'neg';
-      } else {
-        pb.textContent = 'Várakozás';
-        pb.className = '';
-      }
-
-      document.getElementById('solPrice').textContent = `$${Number(d.price).toFixed(2)}`;
-      document.getElementById('entrySub').textContent = d.entry_price
-        ? `Bekerülés: $${Number(d.entry_price).toFixed(2)}` : 'Nincs pozíció';
-      document.getElementById('freeUsdt').textContent = `$${Number(d.free_usdt).toFixed(2)}`;
-      document.getElementById('freeSol').textContent = `${Number(d.free_crypto).toFixed(4)} SOL`;
-
-      const entryCard = document.getElementById('entryCard');
-      if (d.has_position && d.entry_price) {
-        entryCard.style.display = 'block';
-        document.getElementById('entryTimeVal').textContent = formatHuDate(d.entry_time);
-        document.getElementById('entryPriceVal').textContent = `$${Number(d.entry_price).toFixed(2)} / SOL`;
-        const sizeVal = d.entry_size ? Number(d.entry_size).toFixed(4) : Number(d.free_crypto).toFixed(4);
-        const costVal = d.entry_cost_usdt ? Number(d.entry_cost_usdt).toFixed(2) : (d.entry_price * d.free_crypto).toFixed(2);
-        document.getElementById('entryCostVal').textContent = `$${costVal} USDT (${sizeVal} SOL)`;
-      } else {
-        entryCard.style.display = 'none';
-      }
-
-      const spread = (d.ma10 - d.ma30).toFixed(2);
-      document.getElementById('maVal').textContent = `${d.ma10} / ${d.ma30}`;
-      document.getElementById('maHint').textContent = d.ma10 > d.ma30 ? `Emelkedő (+${spread}$)` : `Csökkenő (${spread}$)`;
-      document.getElementById('adxVal').textContent = d.adx;
-      document.getElementById('adxHint').textContent = d.adx >= d.adx_min ? 'Trend aktív' : 'Oldalazás';
-      document.getElementById('rsiVal').textContent = d.rsi;
-      document.getElementById('rsiHint').textContent = d.rsi > d.rsi_max ? 'Túlvásárolt' : 'Normál zóna';
-      document.getElementById('slVal').textContent = d.stop_loss_price ? `$${Number(d.stop_loss_price).toFixed(2)}` : '-';
-      document.getElementById('slHint').textContent = d.has_position ? `-${d.stop_loss_pct}% vészfék` : 'Inaktív';
-
-      renderTrades(d.recent_trades);
-
-      const slider = document.getElementById('simSlider');
-      slider.min = Math.max(10, Math.floor(d.price * 0.75));
-      slider.max = Math.ceil(d.price * 1.30);
-      slider.value = d.price;
-      updateSim();
-
-      if (document.getElementById('tab-charts').classList.contains('active')) {
-        renderCharts(d);
-      }
-    }
-
-    function updateSim() {
-      const simPrice = parseFloat(document.getElementById('simSlider').value);
-      document.getElementById('simPrice').textContent = `$${simPrice.toFixed(2)}`;
-      const simTotal = currentData.free_usdt + currentData.free_crypto * simPrice;
-      document.getElementById('simTotal').textContent = `$${simTotal.toFixed(2)}`;
-
-      const pnlEl = document.getElementById('simPnl');
-      if (currentData.has_position && currentData.entry_price) {
-        const pct = ((simPrice - currentData.entry_price) / currentData.entry_price) * 100;
-        const usd = (simPrice - currentData.entry_price) * currentData.free_crypto;
-        const slHit = currentData.stop_loss_price && simPrice <= currentData.stop_loss_price;
-        pnlEl.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}% (${usd >= 0 ? '+' : ''}$${usd.toFixed(2)})${slHit ? ' ⚠️ SL' : ''}`;
-        pnlEl.className = pct >= 0 ? 'pos' : 'neg';
-      } else {
-        pnlEl.textContent = 'Nincs nyitott pozíció';
-        pnlEl.className = '';
-      }
-    }
-
-    async function refreshLivePrice() {
-      try {
-        const sym = getBinanceSymbol(currentData);
-        const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`);
-        if (!res.ok) return;
-        const livePrice = parseFloat((await res.json()).price);
-        if (!livePrice) return;
-
-        const d = { ...currentData };
-        d.price = Number(livePrice.toFixed(2));
-        d.position_usd = Number((d.free_crypto * livePrice).toFixed(2));
-        d.total_usd = Number((d.free_usdt + d.position_usd).toFixed(2));
-        if (d.has_position && d.entry_price) {
-          d.profit_pct = Number((((livePrice - d.entry_price) / d.entry_price) * 100).toFixed(2));
-          d.profit_usdt = Number(((livePrice - d.entry_price) * d.free_crypto).toFixed(2));
-        }
-        render(d);
-        document.getElementById('updatedText').textContent =
-          'Élő ár: ' + new Date().toLocaleTimeString('hu-HU') +
-          (d.updated_at ? ' • Robot: ' + new Date(d.updated_at).toLocaleTimeString('hu-HU') : '');
-      } catch (e) {}
-    }
-
-    async function loadData() {
-      try {
-        const res = await fetch(`./status.json?t=${Date.now()}`, { cache: 'no-store' });
-        if (!res.ok) throw new Error();
-        render(await res.json());
-      } catch (e) {
-        render(FALLBACK);
-      }
-      await refreshLivePrice();
-      await loadLiveChart(currentTf);
-    }
-
-    loadData();
-    setInterval(async () => {
-      await refreshLivePrice();
-      await loadLiveChart(currentTf);
-    }, 60000);
-    setInterval(loadData, 300000);
-  </script>
-</body>
-</html>
+        type: 'doughnut
