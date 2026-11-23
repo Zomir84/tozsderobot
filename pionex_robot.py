@@ -23,7 +23,7 @@ TRAILING_TAVOLSAG = 0.025      # Alap követési távolság aktiválás után (-
 TRAILING_SZOROS_TAVOLSAG = 0.012  # +8% csúcsnyereség felett szorosabb követés (-1.2%)
 TRAILING_SZOROS_KUSZOB = 0.08  # +8% nyereségtől szűkül a követési sáv
 NULLSZALDO_PUFFER = 0.005      # Aktiválás után min. +0.5%-on véd (díjak felett)
-TIZEDES_PONTOSSAG = 3          # BTC: 6, ETH: 5, SOL: 3, XRP: 1
+TIZEDES_PONTOSSAG = 2          # BTC: 6, ETH: 5, SOL: 3, XRP: 1
 
 # --- SZŰRŐK ---
 ADX_MINIMUM = 20               # 20 alatt oldalazás, nem vesz
