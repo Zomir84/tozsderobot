@@ -130,5 +130,11 @@
     "total_usd": 56.04,
     "price": 72.18,
     "status": "TARTÁS"
+  },
+  {
+    "time": "2026-11-23T14:02:00.723298+00:00",
+    "total_usd": 56.84,
+    "price": 75.83,
+    "status": "TARTÁS"
   }
 ]
