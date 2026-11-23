@@ -231,7 +231,52 @@ def futtatas():
     legmagasabb_ar = None
     trailing_aktiv = False
 
-    if ma10 > ma30 and not van_pozicio:
+    kenyszertett_eladas = os.environ.get("FORCE_SELL", "").strip().lower() == "true"
+    eladhato_most = lefele_kerekit(szabad_kripto, TIZEDES_PONTOSSAG)
+
+    if kenyszertett_eladas and eladhato_most > 0:
+        profit_pct = ((ar - veteli_ar) / veteli_ar) * 100 if veteli_ar else 0.0
+        profit_usdt = (ar - veteli_ar) * eladhato_most if veteli_ar else 0.0
+        ok = "MANUÁLIS AZONNALI ELADÁS (APP GOMB)"
+
+        if TESZT_MOD:
+            dontes = "TESZT ELADÁS"
+            dontes_reszlet = f"[TESZT MÓD] {ok} -> {eladhato_most} {ALAP_COIN} eladása lenne ({profit_pct:+.2f}%)."
+            print(dontes_reszlet)
+        else:
+            print(f"{ok} -> {eladhato_most} {ALAP_COIN} eladása ({profit_pct:+.2f}%)...")
+            pionex_keres("POST", "/api/v1/trade/order", body={
+                "symbol": PIONEX_SZIMBOLUM,
+                "side": "SELL",
+                "type": "MARKET",
+                "size": f"{eladhato_most:.{TIZEDES_PONTOSSAG}f}"
+            })
+            print("Pozíció kézi gombbal lezárva!")
+
+            time.sleep(2)
+            uj_usdt = szabad_egyenleg(JEGYZESI_COIN)
+            szabad_usdt = uj_usdt
+            szabad_kripto = szabad_egyenleg(ALAP_COIN)
+            kotesek = utolso_kotesek(PIONEX_SZIMBOLUM)
+            veteli_osszeg = round(szabad_usdt * TET_SZAZALEK, 2)
+            pozicio_ertek_usd = szabad_kripto * ar
+            van_pozicio = False
+            legmagasabb_ar = None
+            trailing_aktiv = False
+            stop_loss_ar = None
+            dontes = "ELADÁS"
+            dontes_reszlet = f"{ok} | Eredmény: {profit_pct:+.2f}% ({profit_usdt:+.2f} {JEGYZESI_COIN})"
+
+            cimke = "🟢 NYERESÉG" if profit_usdt >= 0 else "🔴 VESZTESÉG"
+            telegram_uzenet(
+                f"{cimke} | {PIONEX_SZIMBOLUM} lezárva\n"
+                f"Ok: {ok}\n"
+                f"Eredmény: {profit_pct:+.2f}% ({profit_usdt:+.2f} {JEGYZESI_COIN})\n"
+                f"Eladási ár: {ar:.2f} {JEGYZESI_COIN}\n"
+                f"Új szabad egyenleg: {uj_usdt:.2f} {JEGYZESI_COIN}"
+            )
+
+    elif ma10 > ma30 and not van_pozicio:
         if adx < ADX_MINIMUM:
             dontes = "SZŰRŐ BLOKKOLTA"
             dontes_reszlet = f"Gyenge trend / oldalazás (ADX: {adx:.1f}, min. {ADX_MINIMUM} kell)."
@@ -410,7 +455,7 @@ def futtatas():
 
     profit_gorbe_mentese(szabad_usdt + pozicio_ertek_usd, ar, dontes)
 
-    if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
+    if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch" and not kenyszertett_eladas:
         allapot = f"Nyitott pozíció (~{pozicio_ertek_usd:.2f} USD)" if van_pozicio else "Nincs nyitott pozíció"
         print("Telegram tesztüzenet küldése...")
         telegram_uzenet(
