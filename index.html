@@ -1250,10 +1250,9 @@
     async function refreshLivePrice() {
       const updEl = document.getElementById('updatedText');
       try {
-        const sym = getBinanceSymbol(currentData);
-        const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`, { cache: 'no-store' });
-        if (!res.ok) throw new Error(`Binance HTTP ${res.status}`);
-        const livePrice = parseFloat((await res.json()).price);
+        const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd', { cache: 'no-store' });
+        if (!res.ok) throw new Error(`CoinGecko HTTP ${res.status}`);
+        const livePrice = parseFloat((await res.json())?.solana?.usd);
         if (!livePrice) throw new Error('Érvénytelen élő ár');
 
         const d = { ...currentData };
