@@ -409,7 +409,7 @@
 
     <div class="grid-2">
       <div class="card">
-        <div class="kpi-label">SOL élő ár</div>
+        <div class="kpi-label">SOL ár</div>
         <div class="kpi-value" id="solPrice">-</div>
         <div class="kpi-sub" id="entrySub">Bekerülés: -</div>
       </div>
@@ -439,7 +439,7 @@
     <div class="card">
       <div class="chart-header">
         <div class="chart-meta">
-          <div class="section-title" id="liveChartTitle">SOL/USDT élő grafikon</div>
+          <div class="section-title" id="liveChartTitle">SOL/USDT grafikon</div>
           <div class="chart-change" id="liveChartChange">Betöltés...</div>
         </div>
         <div class="tf-group">
@@ -854,7 +854,7 @@
       const cfg = TIMEFRAMES[tf] || TIMEFRAMES['1d'];
       const sym = getBinanceSymbol(currentData);
       const displaySym = (currentData.symbol || 'SOL_USDT').replace('_', '/');
-      document.getElementById('liveChartTitle').textContent = `${displaySym} élő grafikon`;
+      document.getElementById('liveChartTitle').textContent = `${displaySym} grafikon`;
 
       try {
         const url = `https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${cfg.interval}&limit=${cfg.limit}`;
@@ -1247,34 +1247,23 @@
       }
     }
 
-    async function refreshLivePrice() {
+    function syncFromCurrentData() {
       const updEl = document.getElementById('updatedText');
-      try {
-        const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd', { cache: 'no-store' });
-        if (!res.ok) throw new Error(`CoinGecko HTTP ${res.status}`);
-        const livePrice = parseFloat((await res.json())?.solana?.usd);
-        if (!livePrice) throw new Error('Érvénytelen élő ár');
-
-        const d = { ...currentData };
-        d.price = Number(livePrice.toFixed(2));
-        d.position_usd = Number((d.free_crypto * livePrice).toFixed(2));
+      const d = { ...currentData };
+      const price = Number(d.price) || 0;
+      if (price > 0) {
+        d.position_usd = Number((d.free_crypto * price).toFixed(2));
         d.total_usd = Number((d.free_usdt + d.position_usd).toFixed(2));
         if (d.has_position && d.entry_price) {
-          d.profit_pct = Number((((livePrice - d.entry_price) / d.entry_price) * 100).toFixed(2));
-          d.profit_usdt = Number(((livePrice - d.entry_price) * d.free_crypto).toFixed(2));
+          d.profit_pct = Number((((price - d.entry_price) / d.entry_price) * 100).toFixed(2));
+          d.profit_usdt = Number(((price - d.entry_price) * d.free_crypto).toFixed(2));
         }
-        render(d);
-        if (updEl) {
-          updEl.textContent =
-            'Élő ár: ' + new Date().toLocaleTimeString('hu-HU') +
-            (d.updated_at ? ' • Robot: ' + new Date(d.updated_at).toLocaleTimeString('hu-HU') : '');
-        }
-      } catch (e) {
-        render(currentData);
-        if (updEl) {
-          updEl.textContent =
-            'Robot ár aktív (' + e.message + ') • ' + new Date().toLocaleTimeString('hu-HU');
-        }
+      }
+      render(d);
+      if (updEl) {
+        updEl.textContent =
+          'Frissítve: ' + new Date().toLocaleTimeString('hu-HU') +
+          (d.updated_at ? ' • Robot: ' + new Date(d.updated_at).toLocaleTimeString('hu-HU') : '');
       }
     }
 
@@ -1283,19 +1272,19 @@
       if (updEl) updEl.textContent = 'Frissítés...';
       try {
         const res = await fetch(`./status.json?t=${Date.now()}`, { cache: 'no-store' });
-        if (!res.ok) throw new Error();
-        render(await res.json());
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        currentData = await res.json();
       } catch (e) {
-        render(FALLBACK);
+        if (!currentData) currentData = FALLBACK;
       }
-      await refreshLivePrice();
+      syncFromCurrentData();
       await loadLiveChart(currentTf);
       await loadHistory();
     }
 
     loadData();
     setInterval(async () => {
-      await refreshLivePrice();
+      syncFromCurrentData();
       await loadLiveChart(currentTf);
     }, 60000);
     setInterval(loadData, 300000);
