@@ -10,24 +10,24 @@ import yfinance as yf
 import ta
 
 # --- BEÁLLÍTÁSOK ---
-TESZT_MOD = False              # Éles mód (a robot kereskedik)
-YF_SZIMBOLUM = "SOL-USD"       # Yahoo Finance jelölés
-PIONEX_SZIMBOLUM = "SOL_USDT"  # Pionex pár
-ALAP_COIN = "SOL"              # Megvásárolt kriptó
-JEGYZESI_COIN = "USDT"         # Amivel fizetsz
-TET_SZAZALEK = 0.99            # A szabad USDT 99%-át költi egy vételre
-MINIMUM_TET_USDT = 11.0        # Pionex minimum megbízás feletti biztonsági határ
-STOP_LOSS_SZAZALEK = 0.06      # Alap 6%-os veszteségvágó
-TRAILING_AKTIVALAS = 0.04      # +4% nyereség felett kapcsol be a követő Stop-Loss
-TRAILING_TAVOLSAG = 0.025      # Alap követési távolság aktiválás után (-2.5%)
+TESZT_MOD = False                 # Éles mód (a robot kereskedik)
+YF_SZIMBOLUM = "SOL-USD"          # Yahoo Finance jelölés
+PIONEX_SZIMBOLUM = "SOL_USDT"     # Pionex pár
+ALAP_COIN = "SOL"                 # Megvásárolt kriptó
+JEGYZESI_COIN = "USDT"            # Amivel fizetsz
+TET_SZAZALEK = 0.99               # A szabad USDT 99%-át költi egy vételre
+MINIMUM_TET_USDT = 11.0           # Pionex minimum megbízás feletti biztonsági határ
+STOP_LOSS_SZAZALEK = 0.06         # Alap 6%-os veszteségvágó
+TRAILING_AKTIVALAS = 0.04         # +4% nyereség felett kapcsol be a követő Stop-Loss
+TRAILING_TAVOLSAG = 0.025         # Alap követési távolság aktiválás után (-2.5%)
 TRAILING_SZOROS_TAVOLSAG = 0.012  # +8% csúcsnyereség felett szorosabb követés (-1.2%)
-TRAILING_SZOROS_KUSZOB = 0.08  # +8% nyereségtől szűkül a követési sáv
-NULLSZALDO_PUFFER = 0.005      # Aktiválás után min. +0.5%-on véd (díjak felett)
-TIZEDES_PONTOSSAG = 2          # BTC: 6, ETH: 5, SOL: 3, XRP: 1
+TRAILING_SZOROS_KUSZOB = 0.08     # +8% nyereségtől szűkül a követési sáv
+NULLSZALDO_PUFFER = 0.005         # Aktiválás után min. +0.5%-on véd (díjak felett)
+ALAP_TIZEDES_PONTOSSAG = 2        # Tartalék tizedespontosság, ha az API-lekérés nem elérhető
 
 # --- SZŰRŐK ---
-ADX_MINIMUM = 20               # 20 alatt oldalazás, nem vesz
-RSI_MAXIMUM = 70               # 70 felett túlvásárolt, nem vesz
+ADX_MINIMUM = 20                  # 20 alatt oldalazás, nem vesz
+RSI_MAXIMUM = 70                  # 70 felett túlvásárolt, nem vesz
 # --------------
 
 API_KEY = os.environ["PIONEX_API_KEY"].strip()
@@ -82,6 +82,19 @@ def pionex_keres(method, path, params=None, body=None):
     if not adat.get("result"):
         raise RuntimeError(f"Pionex API hiba: {adat}")
     return adat["data"]
+
+
+def lekerdezd_mennyiseg_pontossag(szimbolum, alap_pontossag=ALAP_TIZEDES_PONTOSSAG):
+    try:
+        adat = pionex_keres("GET", "/api/v1/common/symbols", params={"symbols": szimbolum})
+        for s in adat.get("symbols", []):
+            if s.get("symbol") == szimbolum and s.get("basePrecision") is not None:
+                pontossag = int(s["basePrecision"])
+                if pontossag >= 0:
+                    return pontossag
+    except Exception as hiba:
+        print(f"Figyelmeztetés: nem sikerült lekérni a {szimbolum} pontosságát ({hiba}), tartalék érték: {alap_pontossag}")
+    return alap_pontossag
 
 
 def szabad_egyenleg(coin):
@@ -186,6 +199,7 @@ def profit_gorbe_mentese(teljes_usd, aktualis_ar, allapot):
 
 def futtatas():
     elozo = elozo_allapot_betoltese()
+    tizedes_pontossag = lekerdezd_mennyiseg_pontossag(PIONEX_SZIMBOLUM)
     szabad_usdt = szabad_egyenleg(JEGYZESI_COIN)
     szabad_kripto = szabad_egyenleg(ALAP_COIN)
     veteli_osszeg = round(szabad_usdt * TET_SZAZALEK, 2)
@@ -193,7 +207,8 @@ def futtatas():
     vetel_info = utolso_vetel_adatok(kotesek)
 
     print(
-        f"Pionex API kapcsolat OK! Szabad egyenleg: {szabad_usdt:.4f} {JEGYZESI_COIN} "
+        f"Pionex API kapcsolat OK! ({PIONEX_SZIMBOLUM} tizedespontosság: {tizedes_pontossag}) | "
+        f"Szabad egyenleg: {szabad_usdt:.4f} {JEGYZESI_COIN} "
         f"({int(TET_SZAZALEK*100)}% tét = {veteli_osszeg:.2f} {JEGYZESI_COIN}) | {szabad_kripto:.6f} {ALAP_COIN}"
     )
 
@@ -232,7 +247,7 @@ def futtatas():
     trailing_aktiv = False
 
     kenyszertett_eladas = os.environ.get("FORCE_SELL", "").strip().lower() == "true"
-    eladhato_most = lefele_kerekit(szabad_kripto, TIZEDES_PONTOSSAG)
+    eladhato_most = lefele_kerekit(szabad_kripto, tizedes_pontossag)
 
     if kenyszertett_eladas and eladhato_most > 0:
         profit_pct = ((ar - veteli_ar) / veteli_ar) * 100 if veteli_ar else 0.0
@@ -249,7 +264,7 @@ def futtatas():
                 "symbol": PIONEX_SZIMBOLUM,
                 "side": "SELL",
                 "type": "MARKET",
-                "size": f"{eladhato_most:.{TIZEDES_PONTOSSAG}f}"
+                "size": f"{eladhato_most:.{tizedes_pontossag}f}"
             })
             print("Pozíció kézi gombbal lezárva!")
 
@@ -327,7 +342,7 @@ def futtatas():
             )
 
     elif van_pozicio:
-        eladhato = lefele_kerekit(szabad_kripto, TIZEDES_PONTOSSAG)
+        eladhato = lefele_kerekit(szabad_kripto, tizedes_pontossag)
         profit_pct = ((ar - veteli_ar) / veteli_ar) * 100 if veteli_ar else 0.0
         profit_usdt = (ar - veteli_ar) * eladhato if veteli_ar else 0.0
 
@@ -382,7 +397,7 @@ def futtatas():
                     "symbol": PIONEX_SZIMBOLUM,
                     "side": "SELL",
                     "type": "MARKET",
-                    "size": f"{eladhato:.{TIZEDES_PONTOSSAG}f}"
+                    "size": f"{eladhato:.{tizedes_pontossag}f}"
                 })
                 print("Pozíció lezárva!")
 
