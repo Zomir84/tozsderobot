@@ -19,9 +19,9 @@ TET_SZAZALEK = 0.99               # A szabad USDT 99%-át költi egy vételre
 MINIMUM_TET_USDT = 11.0           # Pionex minimum megbízás feletti biztonsági határ
 STOP_LOSS_SZAZALEK = 0.06         # Alap 6%-os veszteségvágó
 TRAILING_AKTIVALAS = 0.04         # +4% nyereség felett kapcsol be a követő Stop-Loss
-TRAILING_TAVOLSAG = 0.025         # Alap követési távolság aktiválás után (-2.5%)
-TRAILING_SZOROS_TAVOLSAG = 0.012  # +8% csúcsnyereség felett szorosabb követés (-1.2%)
-TRAILING_SZOROS_KUSZOB = 0.08     # +8% nyereségtől szűkül a követési sáv
+TRAILING_TAVOLSAG = 0.018         # Szűkített alap követési távolság aktiválás után (-1.8%)
+TRAILING_SZOROS_TAVOLSAG = 0.008  # Szűkített szoros követési távolság (-0.8%)
+TRAILING_SZOROS_KUSZOB = 0.065    # +6.5% csúcsnyereségtől szűkül a követési sáv
 NULLSZALDO_PUFFER = 0.005         # Aktiválás után min. +0.5%-on véd (díjak felett)
 ALAP_TIZEDES_PONTOSSAG = 2        # Tartalék tizedespontosság, ha az API-lekérés nem elérhető
 
