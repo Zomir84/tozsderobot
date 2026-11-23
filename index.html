@@ -2,165 +2,681 @@
 <html lang="hu">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pionex SOL Robot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Pionex Robot" />
+  <meta name="theme-color" content="#0b1120" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="apple-touch-icon" href="./icon.png" />
+  <title>Pionex Robot</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      padding: 16px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0d1117;
-      color: #e6edf3;
+    :root {
+      --bg: #0b1120;
+      --card: #131c31;
+      --card-inner: #0f172a;
+      --border: #1e293b;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --green: #10b981;
+      --red: #ef4444;
+      --blue: #3b82f6;
+      --purple: #8b5cf6;
+      --amber: #f59e0b;
     }
-    .wrap {
-      max-width: 540px;
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    input {
+      user-select: text;
+      -webkit-user-select: text;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding-top: calc(14px + env(safe-area-inset-top));
+      padding-bottom: calc(88px + env(safe-area-inset-bottom));
+      padding-left: 16px;
+      padding-right: 16px;
+      max-width: 640px;
       margin: 0 auto;
     }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .topbar h1 { font-size: 1.2rem; font-weight: 700; letter-spacing: -0.02em; }
+    .topbar p { font-size: 0.74rem; color: var(--muted); margin-top: 2px; }
+    .top-actions { display: flex; align-items: center; gap: 8px; }
+    .badge {
+      padding: 5px 11px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      background: rgba(59, 130, 246, 0.18);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.35);
+    }
+    .badge.green { background: rgba(16,185,129,0.18); color: #34d399; border-color: rgba(16,185,129,0.35); }
+    .badge.red { background: rgba(239,68,68,0.18); color: #f87171; border-color: rgba(239,68,68,0.35); }
+    .badge.amber { background: rgba(245,158,11,0.18); color: #fbbf24; border-color: rgba(245,158,11,0.35); }
+    .icon-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 12px;
+      border: 1px solid #334155;
+      background: #1e293b;
+      color: var(--text);
+      font-size: 1rem;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+    }
+    .icon-btn:active { transform: scale(0.93); }
+
+    .hero-card {
+      background: linear-gradient(145deg, #16223b 0%, #10192d 100%);
+      border: 1px solid #263554;
+      border-radius: 20px;
+      padding: 18px;
+      margin-bottom: 12px;
+    }
+    .hero-label { font-size: 0.78rem; color: var(--muted); }
+    .hero-balance { font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; margin-top: 4px; }
+    .hero-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(148,163,184,0.12);
+      font-size: 0.82rem;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 12px;
+    }
     .card {
-      background: #161b26;
-      border: 1px solid #283144;
-      border-radius: 14px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
       padding: 14px;
       margin-bottom: 12px;
     }
-    .top-row {
+    .grid-2 .card { margin-bottom: 0; }
+    .kpi-label { font-size: 0.74rem; color: var(--muted); }
+    .kpi-value { font-size: 1.3rem; font-weight: 700; margin-top: 4px; }
+    .kpi-sub { font-size: 0.74rem; color: var(--muted); margin-top: 2px; }
+    .pos { color: var(--green); }
+    .neg { color: var(--red); }
+
+    .section-title { font-size: 0.9rem; font-weight: 700; margin-bottom: 10px; }
+
+    /* Kézi pozíciózárás kártya */
+    .sell-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       gap: 10px;
+      flex-wrap: wrap;
     }
-    .badge {
-      padding: 6px 12px;
-      border-radius: 999px;
-      background: #233044;
-      color: #7cc4fa;
-      font-weight: 700;
-      font-size: 12px;
-    }
-    .balance {
-      font-size: 28px;
-      font-weight: 800;
-      margin: 6px 0 4px;
-    }
-    .muted {
-      color: #9aa6bd;
-      font-size: 12px;
-    }
-    .grid-2 {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin-bottom: 12px;
-    }
-    .btn-row {
+    .sell-actions {
       display: flex;
+      align-items: center;
       gap: 8px;
     }
-    button {
-      font-family: inherit;
+    .sell-btn {
+      background: rgba(239, 68, 68, 0.18);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.45);
+      border-radius: 10px;
+      padding: 6px 13px;
+      font-size: 0.76rem;
+      font-weight: 700;
       cursor: pointer;
     }
-    .btn-secondary {
-      padding: 8px 11px;
-      border-radius: 8px;
-      border: 1px solid #3a4762;
-      background: #1f2737;
-      color: #dce4f2;
-      font-size: 12px;
-      font-weight: 600;
-    }
-    .btn-sell {
-      padding: 9px 15px;
-      border-radius: 8px;
-      border: none;
-      background: #c93b3b;
-      color: #ffffff;
-      font-size: 13px;
-      font-weight: 700;
-    }
-    .btn-sell:disabled {
-      opacity: 0.45;
+    .sell-btn:active:not(:disabled) { transform: scale(0.95); }
+    .sell-btn:disabled {
+      opacity: 0.4;
       cursor: not-allowed;
     }
-    #sell-feedback {
+    .sell-feedback {
       margin-top: 8px;
-      font-size: 12px;
-      color: #7cc4fa;
+      font-size: 0.74rem;
+      color: #60a5fa;
       min-height: 16px;
     }
+
+    /* Élő árfolyam grafikon fejléc + idősáv váltó */
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .chart-meta { display: flex; flex-direction: column; gap: 2px; }
+    .chart-meta .section-title { margin-bottom: 0; }
+    .chart-change { font-size: 0.74rem; font-weight: 600; color: var(--muted); }
+    .tf-group {
+      display: inline-flex;
+      background: var(--card-inner);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 3px;
+      gap: 2px;
+    }
+    .tf-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 5px 10px;
+      border-radius: 7px;
+      cursor: pointer;
+    }
+    .tf-btn.active {
+      background: var(--blue);
+      color: #ffffff;
+    }
+    .live-chart-wrap { position: relative; height: 210px; }
+    .chart-legend {
+      display: flex;
+      gap: 14px;
+      margin-top: 8px;
+      font-size: 0.7rem;
+      color: var(--muted);
+      flex-wrap: wrap;
+    }
+    .legend-dot {
+      display: inline-block;
+      width: 10px;
+      height: 2px;
+      vertical-align: middle;
+      margin-right: 4px;
+    }
+
+    /* Revolut USD kifizetés kártya */
+    .rev-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .rev-header .section-title { margin-bottom: 0; }
+    .mini-btn {
+      background: var(--card-inner);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 4px 10px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .mini-btn:active { transform: scale(0.95); }
+    .rev-highlight {
+      background: var(--card-inner);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .rev-amount { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; }
+    .rev-status { font-size: 0.72rem; color: var(--muted); margin-top: 3px; }
+    .rev-settings {
+      display: none;
+      background: var(--card-inner);
+      border: 1px solid #334155;
+      border-radius: 14px;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    .rev-settings.open { display: block; }
+    .rev-input-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .rev-field label {
+      display: block;
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .rev-field input {
+      width: 100%;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 9px;
+      color: var(--text);
+      padding: 8px 10px;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+    .save-btn {
+      width: 100%;
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 9px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .ind-box {
+      background: var(--card-inner);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 11px 12px;
+    }
+    .ind-name { font-size: 0.7rem; color: var(--muted); }
+    .ind-val { font-size: 1.05rem; font-weight: 700; margin-top: 3px; }
+    .ind-hint { font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
+
+    .buy-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 7px 0;
+      border-bottom: 1px solid rgba(148,163,184,0.1);
+      font-size: 0.84rem;
+    }
+    .buy-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .buy-row span { color: var(--muted); }
+
+    .trade-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 11px 12px;
+      background: var(--card-inner);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      margin-bottom: 8px;
+    }
+    .trade-item:last-child { margin-bottom: 0; }
+    .trade-left { display: flex; flex-direction: column; gap: 3px; }
+    .trade-right { text-align: right; display: flex; flex-direction: column; gap: 3px; }
+    .trade-pill {
+      display: inline-block;
+      width: fit-content;
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    .trade-pill.buy { background: rgba(16,185,129,0.18); color: #34d399; }
+    .trade-pill.sell { background: rgba(239,68,68,0.18); color: #f87171; }
+    .trade-time { font-size: 0.72rem; color: var(--muted); }
+    .trade-main { font-size: 0.92rem; font-weight: 700; }
+    .trade-sub { font-size: 0.72rem; color: var(--muted); }
+
+    .chart-wrap { position: relative; height: 210px; }
+
+    input[type="range"] {
+      width: 100%;
+      margin: 16px 0;
+      accent-color: var(--blue);
+      height: 6px;
+    }
+    .sim-stat {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(148,163,184,0.1);
+      font-size: 0.9rem;
+    }
+    .sim-stat:last-child { border-bottom: none; }
+
+    .tab-view { display: none; }
+    .tab-view.active { display: block; animation: fadeIn 0.18s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+    .tabbar {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border-top: 1px solid rgba(148,163,184,0.15);
+      display: flex;
+      justify-content: space-around;
+      padding-top: 8px;
+      padding-bottom: max(10px, env(safe-area-inset-bottom));
+      z-index: 50;
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      font-size: 0.66rem;
+      font-weight: 600;
+      padding: 4px 10px;
+      cursor: pointer;
+    }
+    .tab-btn span.ico { font-size: 1.2rem; line-height: 1; }
+    .tab-btn.active { color: #60a5fa; }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <div class="top-row">
-        <div>
-          <div style="font-size: 18px; font-weight: 700;">Pionex SOL Robot</div>
-          <div id="robot-time" class="muted">Robot: betöltés...</div>
-        </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span id="status-badge" class="badge">TARTÁS</span>
-          <button type="button" class="btn-secondary" onclick="betoltStatusz()">Frissít</button>
-        </div>
-      </div>
-
-      <div class="muted" style="margin-top: 12px;">Teljes portfólió egyenleg</div>
-      <div id="total-usd" class="balance">$--.--</div>
-      <div id="status-detail" class="muted">Állapot betöltése...</div>
+  <div class="topbar">
+    <div>
+      <h1>Pionex SOL Robot</h1>
+      <p id="updatedText">Csatlakozás...</p>
     </div>
-
-    <div class="grid-2">
-      <div class="card" style="margin-bottom: 0;">
-        <div class="muted">SOL ár (robot)</div>
-        <div id="sol-price" style="font-size: 20px; font-weight: 700; margin-top: 4px;">$--.--</div>
-        <div id="entry-price" class="muted" style="margin-top: 4px;">Bekerülés: -</div>
-      </div>
-      <div class="card" style="margin-bottom: 0;">
-        <div class="muted">Szabad USDT</div>
-        <div id="free-usdt" style="font-size: 20px; font-weight: 700; margin-top: 4px;">$--.--</div>
-        <div id="free-crypto" class="muted" style="margin-top: 4px;">0.000000 SOL</div>
-      </div>
-    </div>
-
-    <!-- KÉZI ELADÁS VEZÉRLŐBLOKK -->
-    <div id="sell-control-box" class="card">
-      <div class="top-row" style="flex-wrap: wrap;">
-        <div>
-          <div style="font-weight: 700; font-size: 14px;">Kézi pozíciózárás</div>
-          <div id="sell-status-hint" class="muted">Ellenőrzés...</div>
-        </div>
-        <div class="btn-row">
-          <button id="token-setup-btn" type="button" class="btn-secondary" onclick="beallitGitHubToken()">
-            Token
-          </button>
-          <button id="force-sell-btn" type="button" class="btn-sell" onclick="azonnaliEladasInditasa()" disabled>
-            Eladás
-          </button>
-        </div>
-      </div>
-      <div id="sell-feedback"></div>
+    <div class="top-actions">
+      <span id="statusBadge" class="badge">BETÖLTÉS</span>
+      <button class="icon-btn" onclick="loadData()" aria-label="Frissítés">↻</button>
     </div>
   </div>
 
+  <!-- 1. FÜL: ÁTTEKINTÉS -->
+  <section id="tab-overview" class="tab-view active">
+    <div class="hero-card">
+      <div class="hero-label">Teljes portfólió egyenleg</div>
+      <div class="hero-balance" id="totalUsd">-</div>
+      <div class="hero-row">
+        <span id="statusDetail" style="color: var(--muted);">-</span>
+        <strong id="profitBadge">-</strong>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="kpi-label">SOL élő ár</div>
+        <div class="kpi-value" id="solPrice">-</div>
+        <div class="kpi-sub" id="entrySub">Bekerülés: -</div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">Szabad USDT</div>
+        <div class="kpi-value" id="freeUsdt">-</div>
+        <div class="kpi-sub" id="freeSol">-</div>
+      </div>
+    </div>
+
+    <!-- KÉZI POZÍCIÓZÁRÁS -->
+    <div class="card">
+      <div class="sell-header">
+        <div>
+          <div class="section-title" style="margin-bottom: 2px;">🛑 Kézi pozíciózárás</div>
+          <div class="kpi-sub" id="sellStatusHint">Ellenőrzés...</div>
+        </div>
+        <div class="sell-actions">
+          <button type="button" class="mini-btn" onclick="beallitGitHubToken()">🔑 Token</button>
+          <button id="force-sell-btn" type="button" class="sell-btn" onclick="azonnaliEladasInditasa()" disabled>Eladás</button>
+        </div>
+      </div>
+      <div id="sell-feedback" class="sell-feedback"></div>
+    </div>
+
+    <!-- ÉLŐ ÁRFOLYAM GRAFIKON (1Ó / 1N / 1H) -->
+    <div class="card">
+      <div class="chart-header">
+        <div class="chart-meta">
+          <div class="section-title" id="liveChartTitle">SOL/USDT élő grafikon</div>
+          <div class="chart-change" id="liveChartChange">Betöltés...</div>
+        </div>
+        <div class="tf-group">
+          <button class="tf-btn" data-tf="1h" onclick="setTimeframe('1h', this)">1Ó</button>
+          <button class="tf-btn active" data-tf="1d" onclick="setTimeframe('1d', this)">1N</button>
+          <button class="tf-btn" data-tf="1w" onclick="setTimeframe('1w', this)">1H</button>
+        </div>
+      </div>
+      <div class="live-chart-wrap"><canvas id="livePriceChart"></canvas></div>
+      <div class="chart-legend" id="liveChartLegend" style="display: none;">
+        <span><i class="legend-dot" style="background: #60a5fa;"></i>Bekerülés</span>
+        <span><i class="legend-dot" style="background: #ef4444;"></i><span id="slLegendLabel">Stop-Loss (-6%)</span></span>
+      </div>
+    </div>
+
+    <!-- REVOLUT USD KIFIZETÉS / KIVEHETŐ NYERESÉG -->
+    <div class="card">
+      <div class="rev-header">
+        <div class="section-title">💸 Revolut USD kifizetés</div>
+        <button class="mini-btn" onclick="toggleRevSettings()">⚙️ Beállítás</button>
+      </div>
+
+      <div id="revSettingsBox" class="rev-settings">
+        <div class="rev-input-grid">
+          <div class="rev-field">
+            <label for="startCapInput">Induló tőke ($)</label>
+            <input type="number" id="startCapInput" step="0.01" min="0" inputmode="decimal" />
+          </div>
+          <div class="rev-field">
+            <label for="feeInput">Utalási/váltási díj ($)</label>
+            <input type="number" id="feeInput" step="0.1" min="0" inputmode="decimal" />
+          </div>
+        </div>
+        <button class="save-btn" onclick="saveRevSettings()">Mentés</button>
+      </div>
+
+      <div class="rev-highlight">
+        <div>
+          <div class="kpi-label">Utalható Revolut USD (díj után)</div>
+          <div class="rev-status" id="revStatusText">Számítás...</div>
+        </div>
+        <div class="rev-amount" id="revNetUsd">$0.00</div>
+      </div>
+
+      <div class="buy-row">
+        <span>Induló tőke</span>
+        <strong id="revStartCap">$30.00</strong>
+      </div>
+      <div class="buy-row">
+        <span>Teljes nettó nyereség</span>
+        <strong id="revTotalProfit">$0.00</strong>
+      </div>
+      <div class="buy-row">
+        <span>Azonnal utalható (szabad USDT-ből)</span>
+        <strong id="revImmediateUsd">$0.00</strong>
+      </div>
+    </div>
+
+    <!-- LEGUTÓBBI BEVÁSÁRLÁS -->
+    <div class="card" id="entryCard">
+      <div class="section-title">Legutóbbi bevásárlás</div>
+      <div class="buy-row">
+        <span>Időpont</span>
+        <strong id="entryTimeVal">-</strong>
+      </div>
+      <div class="buy-row">
+        <span>Vételi árfolyam</span>
+        <strong id="entryPriceVal">-</strong>
+      </div>
+      <div class="buy-row">
+        <span>Vásárolt mennyiség / összeg</span>
+        <strong id="entryCostVal">-</strong>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Stratégiai indikátorok</div>
+      <div class="grid-2">
+        <div class="ind-box">
+          <div class="ind-name">MA10 / MA30</div>
+          <div class="ind-val" id="maVal">-</div>
+          <div class="ind-hint" id="maHint">-</div>
+        </div>
+        <div class="ind-box">
+          <div class="ind-name">ADX (Min. 20)</div>
+          <div class="ind-val" id="adxVal">-</div>
+          <div class="ind-hint" id="adxHint">-</div>
+        </div>
+        <div class="ind-box">
+          <div class="ind-name">RSI (Max. 70)</div>
+          <div class="ind-val" id="rsiVal">-</div>
+          <div class="ind-hint" id="rsiHint">-</div>
+        </div>
+        <div class="ind-box">
+          <div class="ind-name" id="slBoxName">Stop-Loss (-6%)</div>
+          <div class="ind-val" id="slVal">-</div>
+          <div class="ind-hint" id="slHint">-</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. FÜL: DIAGRAMOK -->
+  <section id="tab-charts" class="tab-view">
+    <div class="card">
+      <div class="chart-header">
+        <div class="chart-meta">
+          <div class="section-title">📈 Saját profit-görbe (Equity)</div>
+          <div class="chart-change" id="equityMeta">Adatok betöltése...</div>
+        </div>
+      </div>
+      <div class="live-chart-wrap"><canvas id="equityChart"></canvas></div>
+      <div class="chart-legend">
+        <span><i class="legend-dot" style="background: #10b981;"></i>Portfólió ($)</span>
+        <span><i class="legend-dot" style="background: #94a3b8;"></i>Induló tőke</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title">Portfólió megoszlás (USDT vs. SOL)</div>
+      <div class="chart-wrap"><canvas id="portfolioChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="section-title">Tőkeallokáció</div>
+      <div class="chart-wrap"><canvas id="allocChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="section-title">Stop-Loss puffer (-6%)</div>
+      <div class="chart-wrap"><canvas id="slChart"></canvas></div>
+    </div>
+  </section>
+
+  <!-- 3. FÜL: KÖTÉSEK -->
+  <section id="tab-trades" class="tab-view">
+    <div class="card">
+      <div class="section-title">Kötési előzmények (Pionex)</div>
+      <div id="tradesList">
+        <p style="font-size: 0.82rem; color: var(--muted);">Kötések betöltése...</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. FÜL: SZIMULÁTOR -->
+  <section id="tab-sim" class="tab-view">
+    <div class="card">
+      <div class="section-title">Árfolyam-szimulátor (Mi lenne, ha...?)</div>
+      <p style="font-size: 0.8rem; color: var(--muted);">Húzd el a csúszkát, és nézd meg, hol alakul az egyenleged és mikor lép életbe a Stop-Loss.</p>
+      <input type="range" id="simSlider" min="55" max="90" step="0.1" value="68.94" oninput="updateSim()" />
+      <div class="sim-stat">
+        <span style="color: var(--muted);">Szimulált SOL ár</span>
+        <strong id="simPrice">$68.94</strong>
+      </div>
+      <div class="sim-stat">
+        <span style="color: var(--muted);">Pozíció eredménye</span>
+        <strong id="simPnl">-</strong>
+      </div>
+      <div class="sim-stat">
+        <span style="color: var(--muted);">Várható teljes egyenleg</span>
+        <strong id="simTotal">-</strong>
+      </div>
+    </div>
+  </section>
+
+  <!-- ALSÓ iOS NAVIGÁCIÓS SÁV -->
+  <nav class="tabbar">
+    <button class="tab-btn active" onclick="switchTab('overview', this)">
+      <span class="ico">📊</span><span>Áttekintés</span>
+    </button>
+    <button class="tab-btn" onclick="switchTab('charts', this)">
+      <span class="ico">🍩</span><span>Diagramok</span>
+    </button>
+    <button class="tab-btn" onclick="switchTab('trades', this)">
+      <span class="ico">📜</span><span>Kötések</span>
+    </button>
+    <button class="tab-btn" onclick="switchTab('sim', this)">
+      <span class="ico">🎛️</span><span>Szimulátor</span>
+    </button>
+  </nav>
+
   <script>
+    const FALLBACK = {
+      updated_at: null,
+      symbol: "SOL_USDT",
+      price: 69.18,
+      ma10: 69.55,
+      ma30: 69.08,
+      adx: 20.6,
+      rsi: 43.9,
+      free_usdt: 14.7008,
+      free_crypto: 0.218743,
+      next_bet_usdt: 14.55,
+      position_usd: 15.13,
+      total_usd: 29.83,
+      has_position: true,
+      entry_price: 70.36,
+      entry_time: null,
+      entry_size: 0.2187,
+      entry_cost_usdt: 15.39,
+      highest_price: null,
+      trailing_active: false,
+      stop_loss_price: 66.14,
+      stop_loss_pct: 6.0,
+      profit_pct: -1.68,
+      profit_usdt: -0.26,
+      status: "TARTÁS",
+      status_detail: "0.218 SOL (~15.13 USD)",
+      adx_min: 20,
+      rsi_max: 70,
+      recent_trades: []
+    };
+
+    const TIMEFRAMES = {
+      '1h': { interval: '1m',  limit: 60, label: 'elmúlt 1 óra' },
+      '1d': { interval: '15m', limit: 96, label: 'elmúlt 24 óra' },
+      '1w': { interval: '2h',  limit: 84, label: 'elmúlt 7 nap' }
+    };
+
     const GH_OWNER = "Zomir84";
     const GH_REPO = "tozsderobot";
     const GH_WORKFLOW_FILE = "pionex.yml";
     const TOKEN_STORAGE_KEY = "pionex_gh_dispatch_token";
 
-    let aktualisStatusz = null;
+    let currentData = FALLBACK;
+    let historyData = [];
+    let currentTf = '1d';
+    let charts = {};
+    let liveChart = null;
+    let equityChart = null;
 
-    function frissitEladasGombAllapot(statusAdat) {
-      aktualisStatusz = statusAdat || {};
+    function frissitEladasGombAllapot(d) {
       const btn = document.getElementById("force-sell-btn");
-      const hint = document.getElementById("sell-status-hint");
+      const hint = document.getElementById("sellStatusHint");
       if (!btn || !hint) return;
 
-      const vanPoz = Boolean(aktualisStatusz.has_position) && Number(aktualisStatusz.free_crypto || 0) > 0;
+      const vanPoz = Boolean(d && d.has_position) && Number(d.free_crypto || 0) > 0;
       if (vanPoz) {
         btn.disabled = false;
-        hint.textContent = `Nyitott: ${aktualisStatusz.free_crypto} ${aktualisStatusz.base_coin || "SOL"} (~$${Number(aktualisStatusz.position_usd || 0).toFixed(2)})`;
+        hint.textContent = `Nyitott: ${Number(d.free_crypto).toFixed(4)} SOL (~$${Number(d.position_usd || 0).toFixed(2)})`;
       } else {
         btn.disabled = true;
         hint.textContent = "Nincs nyitott eladható pozíció.";
@@ -170,7 +686,7 @@
     function beallitGitHubToken() {
       const regi = localStorage.getItem(TOKEN_STORAGE_KEY) || "";
       const uj = prompt(
-        "Add meg a Fine-grained GitHub tokent (csak Zomir84/tozsderobot -> Actions: Read and write):",
+        "Add meg a Fine-grained GitHub tokent (Zomir84/tozsderobot -> Actions: Read and write):",
         regi
       );
       const fb = document.getElementById("sell-feedback");
@@ -195,11 +711,10 @@
         return;
       }
 
-      const coin = aktualisStatusz?.base_coin || "SOL";
-      const mennyiseg = aktualisStatusz?.free_crypto ?? "";
-      const ar = aktualisStatusz?.price ?? "";
+      const mennyiseg = currentData?.free_crypto != null ? Number(currentData.free_crypto).toFixed(4) : "";
+      const ar = currentData?.price != null ? Number(currentData.price).toFixed(2) : "";
       const ok = confirm(
-        `Biztosan eladod a nyitott pozíciót?\n\nEszköz: ${coin}\nMennyiség: ${mennyiseg}\nUtolsó ár: $${ar}`
+        `Biztosan eladod a nyitott pozíciót?\n\nEszköz: SOL\nMennyiség: ${mennyiseg} SOL\nUtolsó ár: $${ar}`
       );
       if (!ok) return;
 
@@ -230,41 +745,550 @@
         } else {
           const hibaSzoveg = await valasz.text();
           if (fb) fb.textContent = `Hiba (${valasz.status}): ${hibaSzoveg}`;
-          btn.disabled = false;
+          frissitEladasGombAllapot(currentData);
         }
       } catch (err) {
         if (fb) fb.textContent = `Hálózati hiba: ${err.message}`;
-        btn.disabled = false;
+        frissitEladasGombAllapot(currentData);
       }
     }
 
-    async function betoltStatusz() {
+    function getRevConfig() {
+      const startCap = parseFloat(localStorage.getItem('pionex_start_cap'));
+      const fee = parseFloat(localStorage.getItem('pionex_rev_fee'));
+      return {
+        startCap: isNaN(startCap) ? 30.0 : startCap,
+        fee: isNaN(fee) ? 1.0 : fee
+      };
+    }
+
+    function toggleRevSettings() {
+      const box = document.getElementById('revSettingsBox');
+      const cfg = getRevConfig();
+      document.getElementById('startCapInput').value = cfg.startCap.toFixed(2);
+      document.getElementById('feeInput').value = cfg.fee.toFixed(2);
+      box.classList.toggle('open');
+    }
+
+    function saveRevSettings() {
+      const cap = parseFloat(document.getElementById('startCapInput').value);
+      const fee = parseFloat(document.getElementById('feeInput').value);
+      if (!isNaN(cap) && cap >= 0) localStorage.setItem('pionex_start_cap', cap.toString());
+      if (!isNaN(fee) && fee >= 0) localStorage.setItem('pionex_rev_fee', fee.toString());
+      document.getElementById('revSettingsBox').classList.remove('open');
+      updateRevolutCard(currentData);
+      if (document.getElementById('tab-charts').classList.contains('active')) {
+        renderEquityChart();
+      }
+    }
+
+    function updateRevolutCard(d) {
+      const { startCap, fee } = getRevConfig();
+      const totalUsd = Number(d.total_usd) || 0;
+      const freeUsdt = Number(d.free_usdt) || 0;
+
+      const netProfit = totalUsd - startCap;
+      const netAfterFee = Math.max(0, netProfit - fee);
+      const immediateProfit = Math.max(0, Math.min(netProfit, freeUsdt));
+      const immediateAfterFee = Math.max(0, immediateProfit - fee);
+
+      document.getElementById('revStartCap').textContent = `$${startCap.toFixed(2)}`;
+
+      const profEl = document.getElementById('revTotalProfit');
+      profEl.textContent = `${netProfit >= 0 ? '+' : ''}$${netProfit.toFixed(2)}`;
+      profEl.className = netProfit > 0 ? 'pos' : (netProfit < 0 ? 'neg' : '');
+
+      const revEl = document.getElementById('revNetUsd');
+      revEl.textContent = `$${netAfterFee.toFixed(2)}`;
+      revEl.className = 'rev-amount ' + (netAfterFee > 0 ? 'pos' : '');
+
+      document.getElementById('revImmediateUsd').textContent = `$${immediateAfterFee.toFixed(2)}`;
+
+      const stEl = document.getElementById('revStatusText');
+      if (netProfit <= 0) {
+        stEl.textContent = `Még $${Math.abs(netProfit).toFixed(2)} kell a tőkéd feletti nyereséghez`;
+      } else if (netProfit <= fee) {
+        stEl.textContent = `A nyereség még nem fedezi a $${fee.toFixed(2)} utalási díjat`;
+      } else if (freeUsdt >= netProfit) {
+        stEl.textContent = `✅ Szabad USDT-ben van, azonnal utalható ($${fee.toFixed(2)} díjjal)`;
+      } else {
+        stEl.textContent = `⏳ Nyitott SOL-ban van (eladás után utalható)`;
+      }
+    }
+
+    function getBinanceSymbol(d) {
+      return (d.symbol || 'SOL_USDT').replace('_', '');
+    }
+
+    function formatHuDate(iso) {
+      if (!iso) return 'Várakozás a következő robot-futásra';
+      const dt = new Date(iso);
+      return dt.toLocaleString('hu-HU', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    }
+
+    function switchTab(name, btn) {
+      document.querySelectorAll('.tab-view').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      document.getElementById('tab-' + name).classList.add('active');
+      btn.classList.add('active');
+      if (name === 'charts') {
+        renderCharts(currentData);
+        renderEquityChart();
+      }
+    }
+
+    function setTimeframe(tf, btn) {
+      currentTf = tf;
+      document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      loadLiveChart(tf);
+    }
+
+    async function loadLiveChart(tf = currentTf) {
+      const cfg = TIMEFRAMES[tf] || TIMEFRAMES['1d'];
+      const sym = getBinanceSymbol(currentData);
+      const displaySym = (currentData.symbol || 'SOL_USDT').replace('_', '/');
+      document.getElementById('liveChartTitle').textContent = `${displaySym} élő grafikon`;
+
       try {
-        const res = await fetch(`status.json?t=${Date.now()}`, { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const url = `https://api.binance.com/api/v3/klines?symbol=${sym}&interval=${cfg.interval}&limit=${cfg.limit}`;
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const klines = await res.json();
+        if (!Array.isArray(klines) || klines.length === 0) return;
+
+        const labels = klines.map(k => {
+          const dt = new Date(k[0]);
+          if (tf === '1w') {
+            return dt.toLocaleDateString('hu-HU', { month: '2-digit', day: '2-digit' }) + ' ' +
+                   dt.toLocaleTimeString('hu-HU', { hour: '2-digit', minute: '2-digit' });
+          }
+          return dt.toLocaleTimeString('hu-HU', { hour: '2-digit', minute: '2-digit' });
+        });
+        const prices = klines.map(k => parseFloat(k[4]));
+
+        const first = prices[0];
+        const last = prices[prices.length - 1];
+        const diff = last - first;
+        const pct = first > 0 ? (diff / first) * 100 : 0;
+        const isUp = diff >= 0;
+
+        const chEl = document.getElementById('liveChartChange');
+        chEl.textContent = `${isUp ? '+' : ''}${pct.toFixed(2)}% (${isUp ? '+' : ''}$${diff.toFixed(2)}) • ${cfg.label}`;
+        chEl.className = 'chart-change ' + (isUp ? 'pos' : 'neg');
+
+        const lineColor = isUp ? '#10b981' : '#ef4444';
+        const ctx = document.getElementById('livePriceChart').getContext('2d');
+        const grad = ctx.createLinearGradient(0, 0, 0, 210);
+        grad.addColorStop(0, isUp ? 'rgba(16, 185, 129, 0.28)' : 'rgba(239, 68, 68, 0.28)');
+        grad.addColorStop(1, 'rgba(11, 17, 32, 0.0)');
+
+        const datasets = [{
+          label: 'Árfolyam ($)',
+          data: prices,
+          borderColor: lineColor,
+          backgroundColor: grad,
+          borderWidth: 2,
+          fill: true,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          tension: 0.2
+        }];
+
+        const legendEl = document.getElementById('liveChartLegend');
+        if (currentData.has_position && currentData.entry_price) {
+          legendEl.style.display = 'flex';
+          document.getElementById('slLegendLabel').textContent = currentData.trailing_active
+            ? 'Követő SL (aktív)'
+            : `Stop-Loss (-${currentData.stop_loss_pct || 6}%)`;
+          datasets.push({
+            label: 'Bekerülés ($)',
+            data: Array(prices.length).fill(currentData.entry_price),
+            borderColor: 'rgba(96, 165, 250, 0.85)',
+            borderWidth: 1.3,
+            borderDash: [5, 5],
+            pointRadius: 0,
+            fill: false
+          });
+          if (currentData.stop_loss_price) {
+            datasets.push({
+              label: currentData.trailing_active ? 'Követő SL ($)' : 'Stop-Loss ($)',
+              data: Array(prices.length).fill(currentData.stop_loss_price),
+              borderColor: 'rgba(239, 68, 68, 0.8)',
+              borderWidth: 1.3,
+              borderDash: [4, 4],
+              pointRadius: 0,
+              fill: false
+            });
+          }
+        } else {
+          legendEl.style.display = 'none';
+        }
+
+        if (liveChart) liveChart.destroy();
+        liveChart = new Chart(ctx, {
+          type: 'line',
+          data: { labels, datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: '#0f172a',
+                borderColor: '#334155',
+                borderWidth: 1,
+                titleColor: '#94a3b8',
+                bodyColor: '#f8fafc',
+                callbacks: {
+                  label: (c) => `${c.dataset.label}: $${Number(c.parsed.y).toFixed(2)}`
+                }
+              }
+            },
+            scales: {
+              x: {
+                grid: { display: false },
+                ticks: {
+                  color: '#64748b',
+                  maxTicksLimit: 5,
+                  maxRotation: 0,
+                  font: { size: 10 }
+                }
+              },
+              y: {
+                position: 'right',
+                grid: { color: 'rgba(148, 163, 184, 0.08)' },
+                ticks: {
+                  color: '#94a3b8',
+                  font: { size: 10 },
+                  callback: (v) => '$' + Number(v).toFixed(2)
+                }
+              }
+            }
+          }
+        });
+      } catch (e) {}
+    }
+
+    async function loadHistory() {
+      try {
+        const res = await fetch(`./history.json?t=${Date.now()}`, { cache: 'no-store' });
+        if (!res.ok) return;
         const data = await res.json();
-
-        document.getElementById("status-badge").textContent = data.status || "ISMERETLEN";
-        document.getElementById("total-usd").textContent = `$${Number(data.total_usd ?? 0).toFixed(2)}`;
-        document.getElementById("status-detail").textContent = data.status_detail || "";
-        document.getElementById("sol-price").textContent = `$${Number(data.price ?? 0).toFixed(2)}`;
-        document.getElementById("entry-price").textContent =
-          data.entry_price != null ? `Bekerülés: $${Number(data.entry_price).toFixed(2)}` : "Bekerülés: -";
-        document.getElementById("free-usdt").textContent = `$${Number(data.free_usdt ?? 0).toFixed(2)}`;
-        document.getElementById("free-crypto").textContent =
-          `${Number(data.free_crypto ?? 0).toFixed(6)} ${data.base_coin || "SOL"}`;
-        document.getElementById("robot-time").textContent =
-          data.updated_at ? `Robot: ${new Date(data.updated_at).toLocaleTimeString("hu-HU")}` : "Robot: -";
-
-        frissitEladasGombAllapot(data);
-      } catch (err) {
-        const fb = document.getElementById("sell-feedback");
-        if (fb) fb.textContent = `Állapot betöltési hiba: ${err.message}`;
+        if (Array.isArray(data)) {
+          historyData = data;
+        }
+      } catch (e) {}
+      if (document.getElementById('tab-charts').classList.contains('active')) {
+        renderEquityChart();
       }
     }
 
-    betoltStatusz();
-    setInterval(betoltStatusz, 60000);
+    function renderEquityChart() {
+      const { startCap } = getRevConfig();
+      const metaEl = document.getElementById('equityMeta');
+      const liveTotal = Number(currentData.total_usd) || 0;
+
+      const points = historyData.map(p => {
+        const dt = new Date(p.time);
+        return {
+          label: dt.toLocaleDateString('hu-HU', { month: '2-digit', day: '2-digit' }) + ' ' +
+                 dt.toLocaleTimeString('hu-HU', { hour: '2-digit', minute: '2-digit' }),
+          val: Number(p.total_usd)
+        };
+      });
+
+      if (liveTotal > 0) {
+        points.push({ label: 'Most', val: liveTotal });
+      }
+
+      if (points.length < 2) {
+        metaEl.textContent = `Jelenleg: $${liveTotal.toFixed(2)} • Gyűjtés folyamatban (óránként 1 új pont)`;
+        metaEl.className = 'chart-change';
+        points.unshift({ label: 'Indulás', val: startCap });
+      } else {
+        const diff = liveTotal - startCap;
+        const pct = startCap > 0 ? (diff / startCap) * 100 : 0;
+        const isUp = diff >= 0;
+        metaEl.textContent = `${isUp ? '+' : ''}${pct.toFixed(2)}% (${isUp ? '+' : ''}$${diff.toFixed(2)}) az induló tőkéhez képest • ${historyData.length} naplózott pont`;
+        metaEl.className = 'chart-change ' + (isUp ? 'pos' : 'neg');
+      }
+
+      const labels = points.map(p => p.label);
+      const values = points.map(p => p.val);
+      const isUp = liveTotal >= startCap;
+      const lineColor = isUp ? '#10b981' : '#ef4444';
+
+      const ctx = document.getElementById('equityChart').getContext('2d');
+      const grad = ctx.createLinearGradient(0, 0, 0, 210);
+      grad.addColorStop(0, isUp ? 'rgba(16, 185, 129, 0.28)' : 'rgba(239, 68, 68, 0.28)');
+      grad.addColorStop(1, 'rgba(11, 17, 32, 0.0)');
+
+      if (equityChart) equityChart.destroy();
+      equityChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Portfólió ($)',
+              data: values,
+              borderColor: lineColor,
+              backgroundColor: grad,
+              borderWidth: 2,
+              fill: true,
+              pointRadius: points.length <= 15 ? 3 : 0,
+              pointHoverRadius: 5,
+              tension: 0.25
+            },
+            {
+              label: 'Induló tőke ($)',
+              data: Array(values.length).fill(startCap),
+              borderColor: 'rgba(148, 163, 184, 0.7)',
+              borderWidth: 1.3,
+              borderDash: [5, 5],
+              pointRadius: 0,
+              fill: false
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#0f172a',
+              borderColor: '#334155',
+              borderWidth: 1,
+              titleColor: '#94a3b8',
+              bodyColor: '#f8fafc',
+              callbacks: {
+                label: (c) => `${c.dataset.label}: $${Number(c.parsed.y).toFixed(2)}`
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: {
+                color: '#64748b',
+                maxTicksLimit: 5,
+                maxRotation: 0,
+                font: { size: 10 }
+              }
+            },
+            y: {
+              position: 'right',
+              grid: { color: 'rgba(148, 163, 184, 0.08)' },
+              ticks: {
+                color: '#94a3b8',
+                font: { size: 10 },
+                callback: (v) => '$' + Number(v).toFixed(2)
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function drawDoughnut(id, labels, values, colors) {
+      if (charts[id]) charts[id].destroy();
+      charts[id] = new Chart(document.getElementById(id), {
+        type: 'doughnut',
+        data: { labels, datasets: [{ data: values, backgroundColor: colors, borderWidth: 0 }] },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '65%',
+          plugins: {
+            legend: { position: 'bottom', labels: { color: '#cbd5e1', boxWidth: 10, font: { size: 12 } } }
+          }
+        }
+      });
+    }
+
+    function renderCharts(d) {
+      drawDoughnut('portfolioChart', ['Szabad USDT', 'Nyitott SOL'],
+        [Math.max(0, d.free_usdt), Math.max(0, d.position_usd)], ['#3b82f6', '#8b5cf6']);
+
+      const reserve = Math.max(0, d.free_usdt - d.next_bet_usdt);
+      drawDoughnut('allocChart', ['Nyitott pozíció', 'Köv. tét (99%)', 'Tartalék'],
+        [Math.max(0, d.position_usd), Math.max(0, d.next_bet_usdt), reserve], ['#8b5cf6', '#10b981', '#334155']);
+
+      const slMax = d.stop_loss_pct || 6;
+      const used = d.has_position && d.profit_pct < 0 ? Math.min(slMax, Math.abs(d.profit_pct)) : 0;
+      drawDoughnut('slChart', ['Felhasznált mínusz (%)', 'Maradék puffer (%)'],
+        [Number(used.toFixed(2)), Number(Math.max(0, slMax - used).toFixed(2))], ['#ef4444', '#10b981']);
+    }
+
+    function renderTrades(trades) {
+      const container = document.getElementById('tradesList');
+      if (!trades || trades.length === 0) {
+        container.innerHTML = '<p style="font-size: 0.82rem; color: var(--muted);">Még nincsenek betöltött kötések. Várd meg a következő 10 perces robot-futást (vagy indíts egy Run workflow-t).</p>';
+        return;
+      }
+      container.innerHTML = trades.map(t => {
+        const isBuy = t.side === 'BUY';
+        return `
+          <div class="trade-item">
+            <div class="trade-left">
+              <span class="trade-pill ${isBuy ? 'buy' : 'sell'}">${isBuy ? 'VÉTEL' : 'ELADÁS'}</span>
+              <span class="trade-time">${formatHuDate(t.time)}</span>
+            </div>
+            <div class="trade-right">
+              <span class="trade-main">$${Number(t.cost_usdt).toFixed(2)} USDT</span>
+              <span class="trade-sub">${Number(t.size).toFixed(4)} SOL @ $${Number(t.price).toFixed(2)}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function render(d) {
+      currentData = d;
+      const badge = document.getElementById('statusBadge');
+      badge.textContent = d.status || 'ISMERETLEN';
+      badge.className = 'badge ' + (
+        d.status === 'VÉTEL' ? 'green' :
+        d.status === 'ELADÁS' ? 'red' :
+        d.status === 'TARTÁS' ? '' : 'amber'
+      );
+
+      document.getElementById('totalUsd').textContent = `$${Number(d.total_usd).toFixed(2)}`;
+      document.getElementById('statusDetail').textContent = d.has_position
+        ? `${Number(d.free_crypto).toFixed(3)} SOL (~$${Number(d.position_usd).toFixed(2)})`
+        : 'Nincs nyitott pozíció';
+
+      const pb = document.getElementById('profitBadge');
+      if (d.has_position) {
+        const s = d.profit_pct >= 0 ? '+' : '';
+        pb.textContent = `${s}${Number(d.profit_pct).toFixed(2)}% (${s}$${Number(d.profit_usdt).toFixed(2)})`;
+        pb.className = d.profit_pct >= 0 ? 'pos' : 'neg';
+      } else {
+        pb.textContent = 'Várakozás';
+        pb.className = '';
+      }
+
+      document.getElementById('solPrice').textContent = `$${Number(d.price).toFixed(2)}`;
+      document.getElementById('entrySub').textContent = d.entry_price
+        ? `Bekerülés: $${Number(d.entry_price).toFixed(2)}` : 'Nincs pozíció';
+      document.getElementById('freeUsdt').textContent = `$${Number(d.free_usdt).toFixed(2)}`;
+      document.getElementById('freeSol').textContent = `${Number(d.free_crypto).toFixed(4)} SOL`;
+
+      frissitEladasGombAllapot(d);
+      updateRevolutCard(d);
+
+      const entryCard = document.getElementById('entryCard');
+      if (d.has_position && d.entry_price) {
+        entryCard.style.display = 'block';
+        document.getElementById('entryTimeVal').textContent = formatHuDate(d.entry_time);
+        document.getElementById('entryPriceVal').textContent = `$${Number(d.entry_price).toFixed(2)} / SOL`;
+        const sizeVal = d.entry_size ? Number(d.entry_size).toFixed(4) : Number(d.free_crypto).toFixed(4);
+        const costVal = d.entry_cost_usdt ? Number(d.entry_cost_usdt).toFixed(2) : (d.entry_price * d.free_crypto).toFixed(2);
+        document.getElementById('entryCostVal').textContent = `$${costVal} USDT (${sizeVal} SOL)`;
+      } else {
+        entryCard.style.display = 'none';
+      }
+
+      const spread = (d.ma10 - d.ma30).toFixed(2);
+      document.getElementById('maVal').textContent = `${d.ma10} / ${d.ma30}`;
+      document.getElementById('maHint').textContent = d.ma10 > d.ma30 ? `Emelkedő (+${spread}$)` : `Csökkenő (${spread}$)`;
+      document.getElementById('adxVal').textContent = d.adx;
+      document.getElementById('adxHint').textContent = d.adx >= d.adx_min ? 'Trend aktív' : 'Oldalazás';
+      document.getElementById('rsiVal').textContent = d.rsi;
+      document.getElementById('rsiHint').textContent = d.rsi > d.rsi_max ? 'Túlvásárolt' : 'Normál zóna';
+      document.getElementById('slBoxName').textContent = d.trailing_active ? 'Követő Stop-Loss' : `Stop-Loss (-${d.stop_loss_pct || 6}%)`;
+      document.getElementById('slVal').textContent = d.stop_loss_price ? `$${Number(d.stop_loss_price).toFixed(2)}` : '-';
+      document.getElementById('slHint').textContent = d.has_position
+        ? (d.trailing_active && d.highest_price ? `Aktív (Csúcs: $${Number(d.highest_price).toFixed(2)})` : `-${d.stop_loss_pct}% vészfék`)
+        : 'Inaktív';
+
+      renderTrades(d.recent_trades);
+
+      const slider = document.getElementById('simSlider');
+      slider.min = Math.max(10, Math.floor(d.price * 0.75));
+      slider.max = Math.ceil(d.price * 1.30);
+      slider.value = d.price;
+      updateSim();
+
+      if (document.getElementById('tab-charts').classList.contains('active')) {
+        renderCharts(d);
+        renderEquityChart();
+      }
+    }
+
+    function updateSim() {
+      const simPrice = parseFloat(document.getElementById('simSlider').value);
+      document.getElementById('simPrice').textContent = `$${simPrice.toFixed(2)}`;
+      const simTotal = currentData.free_usdt + currentData.free_crypto * simPrice;
+      document.getElementById('simTotal').textContent = `$${simTotal.toFixed(2)}`;
+
+      const pnlEl = document.getElementById('simPnl');
+      if (currentData.has_position && currentData.entry_price) {
+        const pct = ((simPrice - currentData.entry_price) / currentData.entry_price) * 100;
+        const usd = (simPrice - currentData.entry_price) * currentData.free_crypto;
+        const slHit = currentData.stop_loss_price && simPrice <= currentData.stop_loss_price;
+        pnlEl.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}% (${usd >= 0 ? '+' : ''}$${usd.toFixed(2)})${slHit ? ' ⚠️ SL' : ''}`;
+        pnlEl.className = pct >= 0 ? 'pos' : 'neg';
+      } else {
+        pnlEl.textContent = 'Nincs nyitott pozíció';
+        pnlEl.className = '';
+      }
+    }
+
+    async function refreshLivePrice() {
+      try {
+        const sym = getBinanceSymbol(currentData);
+        const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${sym}`);
+        if (!res.ok) return;
+        const livePrice = parseFloat((await res.json()).price);
+        if (!livePrice) return;
+
+        const d = { ...currentData };
+        d.price = Number(livePrice.toFixed(2));
+        d.position_usd = Number((d.free_crypto * livePrice).toFixed(2));
+        d.total_usd = Number((d.free_usdt + d.position_usd).toFixed(2));
+        if (d.has_position && d.entry_price) {
+          d.profit_pct = Number((((livePrice - d.entry_price) / d.entry_price) * 100).toFixed(2));
+          d.profit_usdt = Number(((livePrice - d.entry_price) * d.free_crypto).toFixed(2));
+        }
+        render(d);
+        document.getElementById('updatedText').textContent =
+          'Élő ár: ' + new Date().toLocaleTimeString('hu-HU') +
+          (d.updated_at ? ' • Robot: ' + new Date(d.updated_at).toLocaleTimeString('hu-HU') : '');
+      } catch (e) {}
+    }
+
+    async function loadData() {
+      try {
+        const res = await fetch(`./status.json?t=${Date.now()}`, { cache: 'no-store' });
+        if (!res.ok) throw new Error();
+        render(await res.json());
+      } catch (e) {
+        render(FALLBACK);
+      }
+      await refreshLivePrice();
+      await loadLiveChart(currentTf);
+      await loadHistory();
+    }
+
+    loadData();
+    setInterval(async () => {
+      await refreshLivePrice();
+      await loadLiveChart(currentTf);
+    }, 60000);
+    setInterval(loadData, 300000);
   </script>
 </body>
 </html>
