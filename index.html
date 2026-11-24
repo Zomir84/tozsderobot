@@ -1364,19 +1364,57 @@
       }
     }
 
+   function syncFromCurrentData() {
+      const updEl = document.getElementById('updatedText');
+      try {
+        const d = { ...(currentData || FALLBACK) };
+        const price = Number(d.price) || 0;
+        if (price > 0) {
+          d.position_usd = Number(((Number(d.free_crypto) || 0) * price).toFixed(2));
+          d.total_usd = Number(((Number(d.free_usdt) || 0) + d.position_usd).toFixed(2));
+          if (d.has_position && d.entry_price) {
+            d.profit_pct = Number((((price - d.entry_price) / d.entry_price) * 100).toFixed(2));
+            d.profit_usdt = Number(((price - d.entry_price) * (Number(d.free_crypto) || 0)).toFixed(2));
+          }
+        }
+        render(d);
+        if (updEl) {
+          const robotIdo = d.updated_at ? new Date(d.updated_at).toLocaleTimeString('hu-HU') : null;
+          updEl.textContent =
+            'Frissítve: ' + new Date().toLocaleTimeString('hu-HU') +
+            (robotIdo ? ' • Robot: ' + robotIdo : '');
+        }
+      } catch (err) {
+        if (updEl) {
+          updEl.textContent = 'Frissítve: ' + new Date().toLocaleTimeString('hu-HU') + ' (részleges)';
+        }
+      }
+    }
+
     async function loadData() {
       const updEl = document.getElementById('updatedText');
       if (updEl) updEl.textContent = 'Frissítés...';
       try {
         const res = await fetch(`./status.json?t=${Date.now()}`, { cache: 'no-store' });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        currentData = await res.json();
+        if (res.ok) {
+          const friss = await res.json();
+          if (friss && typeof friss === 'object') {
+            currentData = friss;
+          }
+        }
       } catch (e) {
         if (!currentData) currentData = FALLBACK;
       }
+
       syncFromCurrentData();
-      await loadLiveChart(currentTf);
-      await loadHistory();
+
+      try {
+        await loadLiveChart(currentTf);
+      } catch (e) {}
+
+      try {
+        await loadHistory();
+      } catch (e) {}
     }
 
     loadData();
