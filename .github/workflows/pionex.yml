@@ -1,15 +1,22 @@
-name: Pionex Robot (Eles)
+name: Pionex SOL Robot
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: "*/10 * * * *"
   workflow_dispatch:
     inputs:
       force_sell:
-        description: 'Azonnali kényszerített eladás (true/false)'
+        description: "Azonnali kézi eladás indítása"
         required: false
-        default: 'false'
-        type: string
+        default: "false"
+      force_buy:
+        description: "Azonnali kézi vétel indítása"
+        required: false
+        default: "false"
+      manual_buy_usdt:
+        description: "Kézi vétel összege USDT-ben"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -18,16 +25,18 @@ jobs:
   run-robot:
     runs-on: ubuntu-latest
     steps:
-      - name: Repó lekérése
+      - name: Repó lehúzása
         uses: actions/checkout@v4
 
       - name: Python beállítása
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Függőségek telepítése
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests yfinance ta pandas
 
       - name: Robot futtatása
         env:
@@ -36,14 +45,16 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           FORCE_SELL: ${{ inputs.force_sell }}
+          FORCE_BUY: ${{ inputs.force_buy }}
+          MANUAL_BUY_USDT: ${{ inputs.manual_buy_usdt }}
         run: python pionex_robot.py
 
       - name: Állapotfájlok mentése
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add status.json history.json
           if ! git diff --staged --quiet; then
-            git commit -m "Robot frissítés"
+            git commit -m "Update robot status [skip ci]"
             git push
           fi
