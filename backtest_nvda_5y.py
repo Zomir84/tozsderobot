@@ -1,26 +1,27 @@
 from datetime import datetime, timedelta, timezone
+import os
 import pandas as pd
 import yfinance as yf
 from ta.momentum import RSIIndicator
 from ta.trend import ADXIndicator, SMAIndicator
 
 
-SYMBOL = "NVDA"
+SYMBOL = os.environ.get("NVDA_SYMBOL", "NVDA").strip().upper()
 YEARS = 2
 WARMUP_DAYS = 45
-INITIAL_CAPITAL = 100_000.0
-ALLOCATION_PCT = 0.25
+INITIAL_CAPITAL = float(os.environ.get("BACKTEST_INITIAL_CAPITAL", "100000.0"))
+ALLOCATION_PCT = float(os.environ.get("NVDA_ALLOCATION_PCT", "0.25"))
 
-MA_FAST = 10
-MA_SLOW = 30
-ADX_WINDOW = 14
-RSI_WINDOW = 14
+MA_FAST = int(os.environ.get("NVDA_MA_FAST", "10"))
+MA_SLOW = int(os.environ.get("NVDA_MA_SLOW", "30"))
+ADX_WINDOW = int(os.environ.get("NVDA_ADX_WINDOW", "14"))
+RSI_WINDOW = int(os.environ.get("NVDA_RSI_WINDOW", "14"))
 
-ADX_MIN_ENTRY = 25.0
-RSI_MIN_ENTRY = 45.0
-RSI_MAX_ENTRY = 68.0
-RSI_EXIT = 80.0
-STOP_LOSS_PCT = 0.08  # -8.0%
+ADX_MIN_ENTRY = float(os.environ.get("NVDA_ADX_MIN_ENTRY", "25.0"))
+RSI_MIN_ENTRY = float(os.environ.get("NVDA_RSI_MIN_ENTRY", "45.0"))
+RSI_MAX_ENTRY = float(os.environ.get("NVDA_RSI_MAX_ENTRY", "68.0"))
+RSI_EXIT = float(os.environ.get("NVDA_RSI_EXIT", "75.0"))
+STOP_LOSS_PCT = float(os.environ.get("NVDA_STOP_LOSS_PCT", "0.04"))
 
 
 def load_2y_hourly_data(symbol: str, years: int, warmup_days: int) -> pd.DataFrame:
@@ -156,7 +157,7 @@ def main() -> None:
     ind_df = add_indicators(raw_df)
     res = run_backtest(ind_df)
 
-    print(f"=== {SYMBOL} ~2 ÉVES VISSZATESZT (1H - STOP -8%, RSI EXIT 80) ===")
+    print(f"=== {SYMBOL} ~2 ÉVES VISSZATESZT (1H - V2 MÓD) ===")
     print(f"Kezdő tőke:         {res['initial_capital']:,.2f} USD")
     print(f"Végső tőke:         {res['final_equity']:,.2f} USD")
     print(f"Stratégia hozam:   {res['total_return_pct']:+.2f}%")
@@ -165,6 +166,10 @@ def main() -> None:
     print(f"Találati arány:     {res['win_rate_pct']:.1f}%")
     print(f"Max visszaesés:     {res['max_drawdown_pct']:.2f}%")
     print(f"Záráskor nyitott:    {res['open_shares_at_end']} db")
+    print("\n--- Korábbi 2 éves (1H) körök referenciája ---")
+    print("1. kör (15%, ADX>=20, RSI 40-72, RSI exit 80, no SL): -0.42% | WR 40.6% | MDD -4.97% | 64 kötés")
+    print("2. kör (25%, ADX>=25, RSI 45-68, RSI exit 75, SL -4%):  -1.46% | WR 45.9% | MDD -7.62% | 61 kötés")
+    print("3. kör (25%, ADX>=25, RSI 45-68, RSI exit 80, SL -8%):  -4.50% | WR 42.9% | MDD -10.10% | 49 kötés")
 
 
 if __name__ == "__main__":
