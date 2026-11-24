@@ -123,7 +123,7 @@
 
     .section-title { font-size: 0.9rem; font-weight: 700; margin-bottom: 10px; }
 
-    /* Kézi pozíciózárás kártya */
+    /* Kézi kereskedés kártya */
     .sell-header {
       display: flex;
       justify-content: space-between;
@@ -135,6 +135,22 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      flex-wrap: wrap;
+    }
+    .buy-btn {
+      background: rgba(16, 185, 129, 0.18);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.45);
+      border-radius: 10px;
+      padding: 6px 13px;
+      font-size: 0.76rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .buy-btn:active:not(:disabled) { transform: scale(0.95); }
+    .buy-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
     }
     .sell-btn {
       background: rgba(239, 68, 68, 0.18);
@@ -420,15 +436,16 @@
       </div>
     </div>
 
-    <!-- KÉZI POZÍCIÓZÁRÁS -->
+    <!-- KÉZI KERESKEDÉS -->
     <div class="card">
       <div class="sell-header">
         <div>
-          <div class="section-title" style="margin-bottom: 2px;">🛑 Kézi pozíciózárás</div>
+          <div class="section-title" style="margin-bottom: 2px;">🎛️ Kézi művelet (elkülönítve a robottól)</div>
           <div class="kpi-sub" id="sellStatusHint">Ellenőrzés...</div>
         </div>
         <div class="sell-actions">
           <button type="button" class="mini-btn" onclick="beallitGitHubToken()">🔑 Token</button>
+          <button id="force-buy-btn" type="button" class="buy-btn" onclick="azonnaliVetelInditasa()" disabled>Vétel</button>
           <button id="force-sell-btn" type="button" class="sell-btn" onclick="azonnaliEladasInditasa()" disabled>Eladás</button>
         </div>
       </div>
@@ -524,12 +541,12 @@
           <div class="ind-hint" id="maHint">-</div>
         </div>
         <div class="ind-box">
-          <div class="ind-name">ADX (Min. 20)</div>
+          <div class="ind-name">ADX (Min. 15)</div>
           <div class="ind-val" id="adxVal">-</div>
           <div class="ind-hint" id="adxHint">-</div>
         </div>
         <div class="ind-box">
-          <div class="ind-name">RSI (Max. 70)</div>
+          <div class="ind-name">RSI (Max. 72)</div>
           <div class="ind-val" id="rsiVal">-</div>
           <div class="ind-hint" id="rsiHint">-</div>
         </div>
@@ -645,8 +662,9 @@
       profit_usdt: -0.26,
       status: "TARTÁS",
       status_detail: "0.218 SOL (~15.13 USD)",
-      adx_min: 20,
-      rsi_max: 70,
+      adx_min: 15,
+      rsi_max: 72,
+      manual_buys: [],
       recent_trades: []
     };
 
@@ -668,19 +686,30 @@
     let liveChart = null;
     let equityChart = null;
 
-    function frissitEladasGombAllapot(d) {
-      const btn = document.getElementById("force-sell-btn");
+    function frissitGombAllapotok(d) {
+      const sellBtn = document.getElementById("force-sell-btn");
+      const buyBtn = document.getElementById("force-buy-btn");
       const hint = document.getElementById("sellStatusHint");
-      if (!btn || !hint) return;
+      if (!sellBtn || !buyBtn || !hint) return;
 
+      const szabadUsdt = Number(d?.free_usdt || 0);
       const vanPoz = Boolean(d && d.has_position) && Number(d.free_crypto || 0) > 0;
+      const manualCount = Array.isArray(d?.manual_buys) ? d.manual_buys.length : 0;
+
+      buyBtn.disabled = szabadUsdt < 11.0;
+      sellBtn.disabled = !vanPoz;
+
+      const parts = [];
       if (vanPoz) {
-        btn.disabled = false;
-        hint.textContent = `Nyitott: ${Number(d.free_crypto).toFixed(4)} SOL (~$${Number(d.position_usd || 0).toFixed(2)})`;
+        parts.push(`Nyitott: ${Number(d.free_crypto).toFixed(4)} SOL (~$${Number(d.position_usd || 0).toFixed(2)})`);
       } else {
-        btn.disabled = true;
-        hint.textContent = "Nincs nyitott eladható pozíció.";
+        parts.push("Nincs nyitott eladható pozíció.");
       }
+      parts.push(`Szabad: $${szabadUsdt.toFixed(2)}`);
+      if (manualCount > 0) {
+        parts.push(`Manuális tétel: ${manualCount} db (külön kezelve)`);
+      }
+      hint.textContent = parts.join(" • ");
     }
 
     function beallitGitHubToken() {
@@ -699,6 +728,73 @@
       }
       localStorage.setItem(TOKEN_STORAGE_KEY, tisztitott);
       if (fb) fb.textContent = "GitHub token elmentve ezen az eszközön.";
+    }
+
+    async function azonnaliVetelInditasa() {
+      const fb = document.getElementById("sell-feedback");
+      const buyBtn = document.getElementById("force-buy-btn");
+      const token = (localStorage.getItem(TOKEN_STORAGE_KEY) || "").trim();
+
+      if (!token) {
+        if (fb) fb.textContent = "Előbb állítsd be a GitHub tokent a 'Token' gombbal!";
+        return;
+      }
+
+      const szabadUsdt = Number(currentData?.free_usdt || 0);
+      const alapOsszeg = Math.max(11.0, Number((szabadUsdt * 0.99).toFixed(2)));
+      const ar = currentData?.price != null ? Number(currentData.price).toFixed(2) : "";
+
+      const bekert = prompt(
+        `Kézi SOL vétel (elkülönítve a robot algoritmusától).\nAdd meg az elköltendő USDT összeget (min. $11.00, aktuális ár: ~$${ar}):`,
+        alapOsszeg.toFixed(2)
+      );
+      if (bekert === null) return;
+
+      const osszeg = parseFloat(bekert.replace(",", "."));
+      if (isNaN(osszeg) || osszeg < 11.0) {
+        if (fb) fb.textContent = "Érvénytelen összeg! Minimum $11.00 USDT szükséges.";
+        return;
+      }
+
+      const ok = confirm(
+        `Biztosan elindítod a kézi vételt?\n\nEszköz: SOL/USDT\nÖsszeg: $${osszeg.toFixed(2)} USDT\nTétel típusa: Manuális (nem módosítja a robot stratégiáját)`
+      );
+      if (!ok) return;
+
+      buyBtn.disabled = true;
+      if (fb) fb.textContent = "Kézi vételi workflow indítása a GitHubon...";
+
+      try {
+        const valasz = await fetch(
+          `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/actions/workflows/${GH_WORKFLOW_FILE}/dispatches`,
+          {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${token}`,
+              "Accept": "application/vnd.github+json",
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              ref: "main",
+              inputs: {
+                force_buy: "true",
+                manual_buy_usdt: osszeg.toFixed(2)
+              }
+            })
+          }
+        );
+
+        if (valasz.status === 204) {
+          if (fb) fb.textContent = `Kézi vétel ($${osszeg.toFixed(2)}) elindítva! ~20–40 mp alatt lefut a GitHubon.`;
+        } else {
+          const hibaSzoveg = await valasz.text();
+          if (fb) fb.textContent = `Hiba (${valasz.status}): ${hibaSzoveg}`;
+          frissitGombAllapotok(currentData);
+        }
+      } catch (err) {
+        if (fb) fb.textContent = `Hálózati hiba: ${err.message}`;
+        frissitGombAllapotok(currentData);
+      }
     }
 
     async function azonnaliEladasInditasa() {
@@ -745,11 +841,11 @@
         } else {
           const hibaSzoveg = await valasz.text();
           if (fb) fb.textContent = `Hiba (${valasz.status}): ${hibaSzoveg}`;
-          frissitEladasGombAllapot(currentData);
+          frissitGombAllapotok(currentData);
         }
       } catch (err) {
         if (fb) fb.textContent = `Hálózati hiba: ${err.message}`;
-        frissitEladasGombAllapot(currentData);
+        frissitGombAllapotok(currentData);
       }
     }
 
@@ -1140,10 +1236,11 @@
       }
       container.innerHTML = trades.map(t => {
         const isBuy = t.side === 'BUY';
+        const tag = t.source === 'MANUAL' ? ' • KÉZI' : '';
         return `
           <div class="trade-item">
             <div class="trade-left">
-              <span class="trade-pill ${isBuy ? 'buy' : 'sell'}">${isBuy ? 'VÉTEL' : 'ELADÁS'}</span>
+              <span class="trade-pill ${isBuy ? 'buy' : 'sell'}">${isBuy ? 'VÉTEL' : 'ELADÁS'}${tag}</span>
               <span class="trade-time">${formatHuDate(t.time)}</span>
             </div>
             <div class="trade-right">
@@ -1160,7 +1257,7 @@
       const badge = document.getElementById('statusBadge');
       badge.textContent = d.status || 'ISMERETLEN';
       badge.className = 'badge ' + (
-        d.status === 'VÉTEL' ? 'green' :
+        d.status === 'VÉTEL' || d.status === 'KÉZI VÉTEL' ? 'green' :
         d.status === 'ELADÁS' ? 'red' :
         d.status === 'TARTÁS' ? '' : 'amber'
       );
@@ -1186,7 +1283,7 @@
       document.getElementById('freeUsdt').textContent = `$${Number(d.free_usdt).toFixed(2)}`;
       document.getElementById('freeSol').textContent = `${Number(d.free_crypto).toFixed(4)} SOL`;
 
-      frissitEladasGombAllapot(d);
+      frissitGombAllapotok(d);
       updateRevolutCard(d);
 
       const entryCard = document.getElementById('entryCard');
