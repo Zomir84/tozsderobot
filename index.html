@@ -1076,7 +1076,10 @@
 
     async function loadHistory() {
       try {
-        const res = await fetch(`./history.json?t=${Date.now()}`, { cache: 'no-store' });
+        const res = await fetch(`./history.json?cachebust=${Date.now()}`, {
+          cache: 'no-store',
+          headers: { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' }
+        });
         if (!res.ok) return;
         const data = await res.json();
         if (Array.isArray(data)) {
@@ -1374,12 +1377,18 @@
     async function loadData() {
       const updEl = document.getElementById('updatedText');
       if (updEl) updEl.textContent = 'Frissítés...';
+
+      let okJson = false;
       try {
-        const res = await fetch(`./status.json?t=${Date.now()}`, { cache: 'no-store' });
+        const res = await fetch(`./status.json?cachebust=${Date.now()}`, {
+          cache: 'no-store',
+          headers: { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' }
+        });
         if (res.ok) {
           const friss = await res.json();
           if (friss && typeof friss === 'object') {
             currentData = friss;
+            okJson = true;
           }
         }
       } catch (e) {
@@ -1388,13 +1397,12 @@
 
       syncFromCurrentData();
 
-      try {
-        await loadLiveChart(currentTf);
-      } catch (e) {}
+      if (updEl && !okJson) {
+        updEl.textContent += ' • (status.json nem elérhető / régi)';
+      }
 
-      try {
-        await loadHistory();
-      } catch (e) {}
+      try { await loadLiveChart(currentTf); } catch (e) {}
+      try { await loadHistory(); } catch (e) {}
     }
 
     loadData();
