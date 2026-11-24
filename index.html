@@ -707,7 +707,7 @@
       }
       parts.push(`Szabad: $${szabadUsdt.toFixed(2)}`);
       if (manualCount > 0) {
-        parts.push(`Manuális tétel: ${manualCount} db (külön kezelve)`);
+        parts.push(`Manuális tétel: ${manualCount} db`);
       }
       hint.textContent = parts.join(" • ");
     }
@@ -745,7 +745,7 @@
       const ar = currentData?.price != null ? Number(currentData.price).toFixed(2) : "";
 
       const bekert = prompt(
-        `Kézi SOL vétel (elkülönítve a robot algoritmusától).\nAdd meg az elköltendő USDT összeget (min. $11.00, aktuális ár: ~$${ar}):`,
+        `Kézi SOL vétel.\nAdd meg az elköltendő USDT összeget (min. $11.00, aktuális ár: ~$${ar}):`,
         alapOsszeg.toFixed(2)
       );
       if (bekert === null) return;
@@ -757,7 +757,7 @@
       }
 
       const ok = confirm(
-        `Biztosan elindítod a kézi vételt?\n\nEszköz: SOL/USDT\nÖsszeg: $${osszeg.toFixed(2)} USDT\nTétel típusa: Manuális (nem módosítja a robot stratégiáját)`
+        `Biztosan elindítod a kézi vételt?\n\nEszköz: SOL/USDT\nÖsszeg: $${osszeg.toFixed(2)} USDT\nA robot automatikus kilépési logikája érvényes lesz a pozícióra.`
       );
       if (!ok) return;
 
@@ -1345,26 +1345,6 @@
     }
 
     function syncFromCurrentData() {
-      const updEl = document.getElementById('updatedText');
-      const d = { ...currentData };
-      const price = Number(d.price) || 0;
-      if (price > 0) {
-        d.position_usd = Number((d.free_crypto * price).toFixed(2));
-        d.total_usd = Number((d.free_usdt + d.position_usd).toFixed(2));
-        if (d.has_position && d.entry_price) {
-          d.profit_pct = Number((((price - d.entry_price) / d.entry_price) * 100).toFixed(2));
-          d.profit_usdt = Number(((price - d.entry_price) * d.free_crypto).toFixed(2));
-        }
-      }
-      render(d);
-      if (updEl) {
-        updEl.textContent =
-          'Frissítve: ' + new Date().toLocaleTimeString('hu-HU') +
-          (d.updated_at ? ' • Robot: ' + new Date(d.updated_at).toLocaleTimeString('hu-HU') : '');
-      }
-    }
-
-   function syncFromCurrentData() {
       const updEl = document.getElementById('updatedText');
       try {
         const d = { ...(currentData || FALLBACK) };
