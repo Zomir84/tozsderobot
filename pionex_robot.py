@@ -130,16 +130,8 @@ def utolso_kotesek(szimbolum, manual_order_ids=None, limit=15):
     return kotesek
 
 
-def utolso_vetel_adatok(kotesek, manual_order_ids=None):
-    manual_ids = set(str(x) for x in (manual_order_ids or []))
-    elso_buy = next(
-        (
-            k for k in kotesek
-            if k.get("side") == "BUY"
-            and (k.get("order_id") is None or str(k.get("order_id")) not in manual_ids)
-        ),
-        None
-    )
+def utolso_vetel_adatok(kotesek):
+    elso_buy = next((k for k in kotesek if k.get("side") == "BUY"), None)
     if not elso_buy:
         return None
     oid = elso_buy.get("order_id")
@@ -216,7 +208,7 @@ def futtatas():
     szabad_kripto = szabad_egyenleg(ALAP_COIN)
     veteli_osszeg = round(szabad_usdt * TET_SZAZALEK, 2)
     kotesek = utolso_kotesek(PIONEX_SZIMBOLUM, manual_order_ids=manual_order_ids)
-    vetel_info = utolso_vetel_adatok(kotesek, manual_order_ids=manual_order_ids)
+    vetel_info = utolso_vetel_adatok(kotesek)
 
     print(
         f"Pionex API kapcsolat OK! ({PIONEX_SZIMBOLUM} tizedespontosság: {tizedes_pontossag}) | "
@@ -251,11 +243,6 @@ def futtatas():
         f"MA10/MA30: {ma10:.2f}/{ma30:.2f} | ADX: {adx:.1f} | RSI: {rsi:.1f}"
     )
 
-    manual_sol = sum(float(m.get("size", 0.0)) for m in manual_buys)
-    bot_kripto = max(0.0, szabad_kripto - manual_sol)
-    bot_pozicio_usd = bot_kripto * ar
-    bot_van_pozicio = bot_pozicio_usd >= 10.0
-
     pozicio_ertek_usd = szabad_kripto * ar
     van_pozicio = pozicio_ertek_usd >= 10.0
 
@@ -266,10 +253,10 @@ def futtatas():
 
     dontes = "VÁRAKOZÁS"
     dontes_reszlet = "Nincs nyitott pozíció és nincs vételi jelzés."
-    veteli_ar = vetel_info["price"] if (bot_van_pozicio and vetel_info) else None
-    veteli_ido = vetel_info["time"] if (bot_van_pozicio and vetel_info) else None
-    veteli_meret = vetel_info["size"] if (bot_van_pozicio and vetel_info) else None
-    veteli_koltseg = vetel_info["cost_usdt"] if (bot_van_pozicio and vetel_info) else None
+    veteli_ar = vetel_info["price"] if (van_pozicio and vetel_info) else None
+    veteli_ido = vetel_info["time"] if (van_pozicio and vetel_info) else None
+    veteli_meret = vetel_info["size"] if (van_pozicio and vetel_info) else None
+    veteli_koltseg = vetel_info["cost_usdt"] if (van_pozicio and vetel_info) else None
     profit_pct = 0.0
     profit_usdt = 0.0
     stop_loss_ar = None
@@ -281,9 +268,8 @@ def futtatas():
     eladhato_most = lefele_kerekit(szabad_kripto, tizedes_pontossag)
 
     if kenyszertett_eladas and eladhato_most > 0:
-        ref_ar = veteli_ar or (manual_buys[-1]["price"] if manual_buys else None)
-        profit_pct = ((ar - ref_ar) / ref_ar) * 100 if ref_ar else 0.0
-        profit_usdt = (ar - ref_ar) * eladhato_most if ref_ar else 0.0
+        profit_pct = ((ar - veteli_ar) / veteli_ar) * 100 if veteli_ar else 0.0
+        profit_usdt = (ar - veteli_ar) * eladhato_most if veteli_ar else 0.0
         ok = "MANUÁLIS AZONNALI ELADÁS (APP GOMB)"
 
         if TESZT_MOD:
@@ -339,10 +325,10 @@ def futtatas():
             print(f"KÉZI VÉTEL BLOKKOLVA -> {dontes_reszlet}")
         elif TESZT_MOD:
             dontes = "TESZT KÉZI VÉTEL"
-            dontes_reszlet = f"[TESZT MÓD] Kézi vétel lenne ({kezdi_osszeg:.2f} {JEGYZESI_COIN}), elkülönítve a robottól."
+            dontes_reszlet = f"[TESZT MÓD] Kézi vétel lenne ({kezdi_osszeg:.2f} {JEGYZESI_COIN}), a robot logikája érvényes lesz rá."
             print(dontes_reszlet)
         else:
-            print(f"KÉZI VÉTEL (elkülönítve a robottól) -> {kezdi_osszeg:.2f} {JEGYZESI_COIN} értékű {PIONEX_SZIMBOLUM}...")
+            print(f"KÉZI VÉTEL -> {kezdi_osszeg:.2f} {JEGYZESI_COIN} értékű {PIONEX_SZIMBOLUM}...")
             eredmeny = pionex_keres("POST", "/api/v1/trade/order", body={
                 "symbol": PIONEX_SZIMBOLUM,
                 "side": "BUY",
@@ -374,20 +360,31 @@ def futtatas():
             pozicio_ertek_usd = szabad_kripto * ar
             van_pozicio = pozicio_ertek_usd >= 10.0
             kotesek = utolso_kotesek(PIONEX_SZIMBOLUM, manual_order_ids=manual_order_ids)
+            vetel_info = utolso_vetel_adatok(kotesek)
+
+            veteli_ar = vetel_info["price"] if vetel_info else round(ar, 2)
+            veteli_ido = vetel_info["time"] if vetel_info else datetime.now(timezone.utc).isoformat()
+            veteli_meret = vetel_info["size"] if vetel_info else szabad_kripto
+            veteli_koltseg = vetel_info["cost_usdt"] if vetel_info else round(szabad_kripto * veteli_ar, 2)
+            elozo_csucs = float(elozo["highest_price"]) if elozo.get("highest_price") is not None else 0.0
+            legmagasabb_ar = max(elozo_csucs, ar, veteli_ar)
+            stop_loss_ar = veteli_ar * (1 - STOP_LOSS_SZAZALEK)
+            profit_pct = ((ar - veteli_ar) / veteli_ar) * 100 if veteli_ar else 0.0
+            profit_usdt = (ar - veteli_ar) * lefele_kerekit(szabad_kripto, tizedes_pontossag) if veteli_ar else 0.0
 
             dontes = "KÉZI VÉTEL"
             dontes_reszlet = (
-                f"Kézi tétel rögzítve (~{vasarolt_sol:.4f} {ALAP_COIN} @ ~${ar:.2f}), "
-                f"a robot algoritmusától elkülönítve."
+                f"Kézi vétel rögzítve (~{vasarolt_sol:.4f} {ALAP_COIN} @ ~${ar:.2f}), "
+                f"a robot automatikus logikája érvényes a pozícióra."
             )
 
             telegram_uzenet(
                 f"🟩 KÉZI VÉTEL | {PIONEX_SZIMBOLUM}\n"
                 f"Összeg: {kezdi_osszeg:.2f} {JEGYZESI_COIN} (~{vasarolt_sol:.4f} {ALAP_COIN} @ ~${ar:.2f})\n"
-                f"Állapot: Manuális tételként elkülönítve, a robot stratégiáját nem módosítja."
+                f"A robot stop-loss és követő logikája érvényes a teljes pozícióra."
             )
 
-    elif veteli_jel and not bot_van_pozicio:
+    elif veteli_jel and not van_pozicio:
         if adx < ADX_MINIMUM:
             dontes = "SZŰRŐ BLOKKOLTA"
             dontes_reszlet = f"Gyenge trend / oldalazás (ADX: {adx:.1f}, min. {ADX_MINIMUM} kell)."
@@ -418,36 +415,36 @@ def futtatas():
             szabad_usdt = szabad_egyenleg(JEGYZESI_COIN)
             szabad_kripto = szabad_egyenleg(ALAP_COIN)
             kotesek = utolso_kotesek(PIONEX_SZIMBOLUM, manual_order_ids=manual_order_ids)
-            vetel_info = utolso_vetel_adatok(kotesek, manual_order_ids=manual_order_ids)
+            vetel_info = utolso_vetel_adatok(kotesek)
             veteli_osszeg = round(szabad_usdt * TET_SZAZALEK, 2)
             pozicio_ertek_usd = szabad_kripto * ar
             van_pozicio = pozicio_ertek_usd >= 10.0
             veteli_ar = vetel_info["price"] if vetel_info else ar
             veteli_ido = vetel_info["time"] if vetel_info else datetime.now(timezone.utc).isoformat()
-            veteli_meret = vetel_info["size"] if vetel_info else max(0.0, szabad_kripto - manual_sol)
-            veteli_koltseg = vetel_info["cost_usdt"] if vetel_info else round(veteli_meret * ar, 2)
+            veteli_meret = vetel_info["size"] if vetel_info else szabad_kripto
+            veteli_koltseg = vetel_info["cost_usdt"] if vetel_info else round(szabad_kripto * ar, 2)
             legmagasabb_ar = max(ar, veteli_ar)
             stop_loss_ar = veteli_ar * (1 - STOP_LOSS_SZAZALEK)
             dontes = "VÉTEL"
-            dontes_reszlet = f"Új robot-pozíció nyitva ~{veteli_ar:.2f} {JEGYZESI_COIN} áron ({belepes_ok})."
+            dontes_reszlet = f"Új pozíció nyitva ~{veteli_ar:.2f} {JEGYZESI_COIN} áron ({belepes_ok})."
 
             telegram_uzenet(
                 f"🟦 VÉTEL | {PIONEX_SZIMBOLUM} megnyitva\n"
                 f"Belépési ár: ~{veteli_ar:.2f} {JEGYZESI_COIN}\n"
-                f"Mennyiség: {veteli_meret:.6f} {ALAP_COIN} (~{veteli_meret * ar:.2f} {JEGYZESI_COIN})\n"
+                f"Mennyiség: {veteli_meret:.6f} {ALAP_COIN} (~{pozicio_ertek_usd:.2f} {JEGYZESI_COIN})\n"
                 f"Jelzés: {belepes_ok} | ADX={adx:.1f}, RSI={rsi:.1f}"
             )
 
-    elif bot_van_pozicio:
-        eladhato_bot = lefele_kerekit(bot_kripto, tizedes_pontossag)
-        eladhato_teljes = lefele_kerekit(szabad_kripto, tizedes_pontossag)
+    elif van_pozicio:
+        eladhato = lefele_kerekit(szabad_kripto, tizedes_pontossag)
         profit_pct = ((ar - veteli_ar) / veteli_ar) * 100 if veteli_ar else 0.0
-        profit_usdt = (ar - veteli_ar) * eladhato_bot if veteli_ar else 0.0
+        profit_usdt = (ar - veteli_ar) * eladhato if veteli_ar else 0.0
 
         azonos_pozicio = (
             elozo.get("has_position")
-            and elozo.get("entry_price") == veteli_ar
+            and elozo.get("entry_price") is not None
             and elozo.get("highest_price") is not None
+            and float(elozo.get("entry_price")) <= (veteli_ar or ar)
         )
         if azonos_pozicio:
             legmagasabb_ar = max(float(elozo["highest_price"]), ar, veteli_ar or ar)
@@ -484,26 +481,28 @@ def futtatas():
 
             if TESZT_MOD:
                 dontes = "TESZT ELADÁS"
-                dontes_reszlet = f"[TESZT MÓD] {ok} -> {eladhato_bot} {ALAP_COIN} eladása lenne ({profit_pct:+.2f}%)."
+                dontes_reszlet = f"[TESZT MÓD] {ok} -> {eladhato} {ALAP_COIN} eladása lenne ({profit_pct:+.2f}%)."
                 print(dontes_reszlet)
             else:
-                print(f"{ok} -> {eladhato_bot} {ALAP_COIN} (robot-rész) eladása ({profit_pct:+.2f}%)...")
+                print(f"{ok} -> {eladhato} {ALAP_COIN} eladása ({profit_pct:+.2f}%)...")
                 pionex_keres("POST", "/api/v1/trade/order", body={
                     "symbol": PIONEX_SZIMBOLUM,
                     "side": "SELL",
                     "type": "MARKET",
-                    "size": f"{eladhato_bot:.{tizedes_pontossag}f}"
+                    "size": f"{eladhato:.{tizedes_pontossag}f}"
                 })
-                print("Robot pozíció lezárva!")
+                print("Pozíció lezárva!")
 
                 time.sleep(2)
                 uj_usdt = szabad_egyenleg(JEGYZESI_COIN)
                 szabad_usdt = uj_usdt
                 szabad_kripto = szabad_egyenleg(ALAP_COIN)
+                manual_buys = []
+                manual_order_ids = []
                 kotesek = utolso_kotesek(PIONEX_SZIMBOLUM, manual_order_ids=manual_order_ids)
                 veteli_osszeg = round(szabad_usdt * TET_SZAZALEK, 2)
                 pozicio_ertek_usd = szabad_kripto * ar
-                van_pozicio = (pozicio_ertek_usd >= 10.0)
+                van_pozicio = False
                 legmagasabb_ar = None
                 trailing_aktiv = False
                 stop_loss_ar = None
@@ -526,7 +525,7 @@ def futtatas():
                 if trailing_aktiv
                 else f" | SL: ${stop_loss_ar:.2f}"
             )
-            dontes_reszlet = f"{eladhato_teljes} {ALAP_COIN} (~{pozicio_ertek_usd:.2f} USD) | Robot Eredmény: {profit_pct:+.2f}%{sl_info}"
+            dontes_reszlet = f"{eladhato} {ALAP_COIN} (~{pozicio_ertek_usd:.2f} USD) | Eredmény: {profit_pct:+.2f}%{sl_info}"
             print(f"TARTÁS -> {dontes_reszlet}")
     else:
         print(f"VÁRAKOZÁS -> {dontes_reszlet}")
