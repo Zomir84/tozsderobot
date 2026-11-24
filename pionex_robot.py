@@ -18,16 +18,14 @@ JEGYZESI_COIN = "USDT"            # Amivel fizetsz
 TET_SZAZALEK = 0.99               # A szabad USDT 99%-át költi egy vételre
 MINIMUM_TET_USDT = 11.0           # Pionex minimum megbízás feletti biztonsági határ
 STOP_LOSS_SZAZALEK = 0.06         # Alap 6%-os veszteségvágó
-TRAILING_AKTIVALAS = 0.04         # +4% nyereség felett kapcsol be a követő Stop-Loss
-TRAILING_TAVOLSAG = 0.018         # Szűkített alap követési távolság aktiválás után (-1.8%)
-TRAILING_SZOROS_TAVOLSAG = 0.008  # Szűkített szoros követési távolság (-0.8%)
-TRAILING_SZOROS_KUSZOB = 0.065    # +6.5% csúcsnyereségtől szűkül a követési sáv
-NULLSZALDO_PUFFER = 0.005         # Aktiválás után min. +0.5%-on véd (díjak felett)
+LEPCSO_SZAZALEK = 0.04            # Minden további +4% új lépcső
+VISSZAHUZAS_SZAZALEK = 0.015      # +4% elérése után a csúcsárból -1.5% visszahúzódásnál zár
+KORAI_BELEPES = True              # Korai belépés az emelkedés elején (MA5/MA15 vagy emelkedő MA10)
 ALAP_TIZEDES_PONTOSSAG = 2        # Tartalék tizedespontosság, ha az API-lekérés nem elérhető
 
 # --- SZŰRŐK ---
-ADX_MINIMUM = 20                  # 20 alatt oldalazás, nem vesz
-RSI_MAXIMUM = 70                  # 70 felett túlvásárolt, nem vesz
+ADX_MINIMUM = 15                  # 15 alatt gyenge/oldalazó mozgás, nem vesz
+RSI_MAXIMUM = 72                  # 72 felett túlvásárolt, nem vesz
 # --------------
 
 API_KEY = os.environ["PIONEX_API_KEY"].strip()
@@ -216,7 +214,9 @@ def futtatas():
     if adatok is None or adatok.empty:
         raise RuntimeError(f"Yahoo Finance üres adatsort adott vissza ({YF_SZIMBOLUM}).")
 
+    adatok["MA5"] = ta.trend.SMAIndicator(close=adatok["Close"], window=5).sma_indicator()
     adatok["MA10"] = ta.trend.SMAIndicator(close=adatok["Close"], window=10).sma_indicator()
+    adatok["MA15"] = ta.trend.SMAIndicator(close=adatok["Close"], window=15).sma_indicator()
     adatok["MA30"] = ta.trend.SMAIndicator(close=adatok["Close"], window=30).sma_indicator()
     adatok["ADX"] = ta.trend.ADXIndicator(
         high=adatok["High"], low=adatok["Low"], close=adatok["Close"], window=14
@@ -224,15 +224,26 @@ def futtatas():
     adatok["RSI"] = ta.momentum.RSIIndicator(close=adatok["Close"], window=14).rsi()
 
     ar = float(adatok["Close"].iloc[-1])
+    ma5 = float(adatok["MA5"].iloc[-1])
     ma10 = float(adatok["MA10"].iloc[-1])
+    elozo_ma10 = float(adatok["MA10"].iloc[-2]) if len(adatok) >= 2 else ma10
+    ma15 = float(adatok["MA15"].iloc[-1])
     ma30 = float(adatok["MA30"].iloc[-1])
     adx = float(adatok["ADX"].iloc[-1])
     rsi = float(adatok["RSI"].iloc[-1])
 
-    print(f"{PIONEX_SZIMBOLUM} ár: {ar:.2f} | MA10: {ma10:.2f} | MA30: {ma30:.2f} | ADX: {adx:.1f} | RSI: {rsi:.1f}")
+    print(
+        f"{PIONEX_SZIMBOLUM} ár: {ar:.2f} | MA5/MA15: {ma5:.2f}/{ma15:.2f} | "
+        f"MA10/MA30: {ma10:.2f}/{ma30:.2f} | ADX: {adx:.1f} | RSI: {rsi:.1f}"
+    )
 
     pozicio_ertek_usd = szabad_kripto * ar
     van_pozicio = pozicio_ertek_usd >= 10.0
+
+    korai_emelked_jel = (
+        KORAI_BELEPES and ((ma5 > ma15) or (ar > ma10 and ma10 > elozo_ma10))
+    )
+    veteli_jel = (ma10 > ma30) or korai_emelked_jel
 
     dontes = "VÁRAKOZÁS"
     dontes_reszlet = "Nincs nyitott pozíció és nincs vételi jelzés."
@@ -291,7 +302,7 @@ def futtatas():
                 f"Új szabad egyenleg: {uj_usdt:.2f} {JEGYZESI_COIN}"
             )
 
-    elif ma10 > ma30 and not van_pozicio:
+    elif veteli_jel and not van_pozicio:
         if adx < ADX_MINIMUM:
             dontes = "SZŰRŐ BLOKKOLTA"
             dontes_reszlet = f"Gyenge trend / oldalazás (ADX: {adx:.1f}, min. {ADX_MINIMUM} kell)."
@@ -309,7 +320,8 @@ def futtatas():
             dontes_reszlet = f"[TESZT MÓD] Vételi jelzés lenne ({veteli_osszeg:.2f} {JEGYZESI_COIN})."
             print(dontes_reszlet)
         else:
-            print(f"VÉTELI JELZÉS -> {veteli_osszeg:.2f} {JEGYZESI_COIN} értékű {PIONEX_SZIMBOLUM} vásárlása...")
+            belépés_ok = "MA10 > MA30" if ma10 > ma30 else "Korai emelkedés (MA5/MA15 / MA10)"
+            print(f"VÉTELI JELZÉS ({belépés_ok}) -> {veteli_osszeg:.2f} {JEGYZESI_COIN} értékű {PIONEX_SZIMBOLUM} vásárlása...")
             eredmeny = pionex_keres("POST", "/api/v1/trade/order", body={
                 "symbol": PIONEX_SZIMBOLUM,
                 "side": "BUY",
@@ -332,13 +344,13 @@ def futtatas():
             legmagasabb_ar = max(ar, veteli_ar)
             stop_loss_ar = veteli_ar * (1 - STOP_LOSS_SZAZALEK)
             dontes = "VÉTEL"
-            dontes_reszlet = f"Új pozíció nyitva ~{veteli_ar:.2f} {JEGYZESI_COIN} áron."
+            dontes_reszlet = f"Új pozíció nyitva ~{veteli_ar:.2f} {JEGYZESI_COIN} áron ({belépés_ok})."
 
             telegram_uzenet(
                 f"🟦 VÉTEL | {PIONEX_SZIMBOLUM} megnyitva\n"
                 f"Belépési ár: ~{veteli_ar:.2f} {JEGYZESI_COIN}\n"
                 f"Mennyiség: {veteli_meret:.6f} {ALAP_COIN} (~{pozicio_ertek_usd:.2f} {JEGYZESI_COIN})\n"
-                f"Indikátorok: MA10={ma10:.2f} > MA30={ma30:.2f}, ADX={adx:.1f}, RSI={rsi:.1f}"
+                f"Jelzés: {belépés_ok} | ADX={adx:.1f}, RSI={rsi:.1f}"
             )
 
     elif van_pozicio:
@@ -356,21 +368,16 @@ def futtatas():
         else:
             legmagasabb_ar = max(ar, veteli_ar or ar)
 
-        if veteli_ar:
+        lepes_szint = 0
+        if veteli_ar and veteli_ar > 0:
             alap_sl = veteli_ar * (1 - STOP_LOSS_SZAZALEK)
-            if legmagasabb_ar >= veteli_ar * (1 + TRAILING_AKTIVALAS):
+            csucs_nyereseg_pct = (legmagasabb_ar - veteli_ar) / veteli_ar
+            lepes_szint = max(0, math.floor(csucs_nyereseg_pct / LEPCSO_SZAZALEK))
+
+            if lepes_szint >= 1:
                 trailing_aktiv = True
-                csucs_nyereseg_pct = (legmagasabb_ar - veteli_ar) / veteli_ar
-                tavolsag = (
-                    TRAILING_SZOROS_TAVOLSAG
-                    if csucs_nyereseg_pct >= TRAILING_SZOROS_KUSZOB
-                    else TRAILING_TAVOLSAG
-                )
-                koveto_sl = max(
-                    veteli_ar * (1 + NULLSZALDO_PUFFER),
-                    legmagasabb_ar * (1 - tavolsag)
-                )
-                stop_loss_ar = max(alap_sl, koveto_sl)
+                visszahuzasi_sl = legmagasabb_ar * (1 - VISSZAHUZAS_SZAZALEK)
+                stop_loss_ar = max(alap_sl, visszahuzasi_sl)
             else:
                 trailing_aktiv = False
                 stop_loss_ar = alap_sl
@@ -379,11 +386,13 @@ def futtatas():
 
         if stop_loss_aktiv or ma10 < ma30:
             if stop_loss_aktiv:
-                ok = (
-                    f"KÖVETŐ STOP-LOSS (Csúcs: ${legmagasabb_ar:.2f})"
-                    if trailing_aktiv
-                    else f"STOP-LOSS (-{int(STOP_LOSS_SZAZALEK*100)}%)"
-                )
+                if trailing_aktiv:
+                    ok = (
+                        f"LÉPCSŐZETES KÖVETŐ SL (+{lepes_szint * int(LEPCSO_SZAZALEK * 100)}% lépcső, "
+                        f"Csúcs: ${legmagasabb_ar:.2f}, -{VISSZAHUZAS_SZAZALEK * 100:.1f}%)"
+                    )
+                else:
+                    ok = f"STOP-LOSS (-{int(STOP_LOSS_SZAZALEK*100)}%)"
             else:
                 ok = "ELADÁSI JELZÉS (MA10 < MA30)"
 
@@ -425,7 +434,12 @@ def futtatas():
                 )
         else:
             dontes = "TARTÁS"
-            sl_info = f" | Követő SL: ${stop_loss_ar:.2f} (Csúcs: ${legmagasabb_ar:.2f})" if trailing_aktiv else f" | SL: ${stop_loss_ar:.2f}"
+            sl_info = (
+                f" | Lépcső: +{lepes_szint * int(LEPCSO_SZAZALEK * 100)}%, Követő SL: ${stop_loss_ar:.2f} "
+                f"(Csúcs: ${legmagasabb_ar:.2f}, -{VISSZAHUZAS_SZAZALEK * 100:.1f}%)"
+                if trailing_aktiv
+                else f" | SL: ${stop_loss_ar:.2f}"
+            )
             dontes_reszlet = f"{eladhato} {ALAP_COIN} (~{pozicio_ertek_usd:.2f} USD) | Eredmény: {profit_pct:+.2f}%{sl_info}"
             print(f"TARTÁS -> {dontes_reszlet}")
     else:
