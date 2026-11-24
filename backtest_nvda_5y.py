@@ -9,22 +9,22 @@ SYMBOL = "NVDA"
 YEARS = 2
 WARMUP_DAYS = 45
 INITIAL_CAPITAL = 100_000.0
-ALLOCATION_PCT = 0.15
+ALLOCATION_PCT = 0.25
 
 MA_FAST = 10
 MA_SLOW = 30
 ADX_WINDOW = 14
 RSI_WINDOW = 14
 
-ADX_MIN_ENTRY = 20.0
-RSI_MIN_ENTRY = 40.0
-RSI_MAX_ENTRY = 72.0
-RSI_EXIT = 80.0
+ADX_MIN_ENTRY = 25.0
+RSI_MIN_ENTRY = 45.0
+RSI_MAX_ENTRY = 68.0
+RSI_EXIT = 75.0
+STOP_LOSS_PCT = 0.04  # -4.0%
 
 
 def load_2y_hourly_data(symbol: str, years: int, warmup_days: int) -> pd.DataFrame:
     end_dt = datetime.now(timezone.utc)
-    # yfinance 1h bontásnál ~730 nap a felső határ, ezért 720 napot szimulálunk + bemelegítés
     total_days = min(years * 365 + warmup_days, 725)
     start_dt = end_dt - timedelta(days=total_days)
 
@@ -97,7 +97,9 @@ def run_backtest(df: pd.DataFrame) -> dict:
 
         if dt >= cutoff_date:
             if shares > 0:
-                if (ma_fast < ma_slow) or (rsi >= RSI_EXIT):
+                stop_hit = price <= entry_price * (1.0 - STOP_LOSS_PCT)
+                exit_signal = (ma_fast < ma_slow) or (rsi >= RSI_EXIT) or stop_hit
+                if exit_signal:
                     cash += shares * price
                     pnl = (price - entry_price) * shares
                     pnl_pct = ((price / entry_price) - 1.0) * 100.0
@@ -154,7 +156,7 @@ def main() -> None:
     ind_df = add_indicators(raw_df)
     res = run_backtest(ind_df)
 
-    print(f"=== {SYMBOL} ~2 ÉVES VISSZATESZT (1H) ===")
+    print(f"=== {SYMBOL} ~2 ÉVES VISSZATESZT (1H - FINOMÍTOTT) ===")
     print(f"Kezdő tőke:         {res['initial_capital']:,.2f} USD")
     print(f"Végső tőke:         {res['final_equity']:,.2f} USD")
     print(f"Stratégia hozam:   {res['total_return_pct']:+.2f}%")
