@@ -32,3 +32,16 @@ jobs:
           APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
           APCA_API_BASE_URL: ${{ secrets.APCA_API_BASE_URL }}
         run: python alpaca_nvda_robot.py
+
+      - name: Commit updated status.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main || true
+          if git status --porcelain status.json | grep -q .; then
+            git add status.json
+            git commit -m "Update NVDA paper robot status [skip ci]"
+            git push
+          else
+            echo "Nincs változás a status.json fájlban."
+          fi
