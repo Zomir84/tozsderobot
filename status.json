@@ -1,114 +1,169 @@
 {
-  "updated_at": "2026-11-24T04:50:35.942735+00:00",
+  "updated_at": "2026-11-24T04:57:03.456278+00:00",
   "symbol": "SOL_USDT",
   "base_coin": "SOL",
   "quote_coin": "USDT",
-  "price": 71.59,
-  "ma10": 71.93,
-  "ma30": 72.36,
+  "price": 71.45,
+  "ma10": 71.92,
+  "ma30": 72.35,
   "adx": 22.6,
-  "rsi": 45.8,
-  "free_usdt": 0.5429,
-  "free_crypto": 0.751097,
-  "next_bet_usdt": 0.54,
-  "position_usd": 53.77,
-  "total_usd": 54.31,
-  "has_position": true,
-  "entry_price": null,
-  "entry_time": null,
-  "entry_size": null,
-  "entry_cost_usdt": null,
+  "rsi": 44.6,
+  "free_usdt": 54.1561,
+  "free_crypto": 0.001097,
+  "next_bet_usdt": 53.61,
+  "position_usd": 0.08,
+  "total_usd": 54.23,
+  "has_position": false,
+  "entry_price": 71.71,
+  "entry_time": "2026-11-24T04:50:32.957000+00:00",
+  "entry_size": 0.745503,
+  "entry_cost_usdt": 53.46,
   "highest_price": null,
   "trailing_active": false,
   "stop_loss_price": null,
   "stop_loss_pct": 6.0,
-  "profit_pct": 0.0,
-  "profit_usdt": 0.0,
-  "status": "KÉZI VÉTEL",
-  "status_detail": "Kézi tétel rögzítve (~0.7451 SOL @ ~$71.59), a robot algoritmusától elkülönítve.",
+  "profit_pct": -0.36,
+  "profit_usdt": -0.2,
+  "status": "ELADÁS",
+  "status_detail": "ELADÁSI JELZÉS (MA10 < MA30) | Eredmény: -0.36% (-0.20 USDT)",
   "adx_min": 15,
   "rsi_max": 72,
-  "manual_buys": [
-    {
-      "order_id": 11016007674999964,
-      "price": 71.59,
-      "size": 0.74513,
-      "cost_usdt": 53.46,
-      "time": "2026-11-24T04:50:35.356545+00:00"
-    }
-  ],
+  "manual_buys": [],
   "recent_trades": [
+    {
+      "order_id": 11016007675000343,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.52,
+      "size": 0.34,
+      "cost_usdt": 24.32,
+      "time": "2026-11-24T04:57:00.818000+00:00"
+    },
+    {
+      "order_id": 11016007675000343,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.52,
+      "size": 0.02,
+      "cost_usdt": 1.43,
+      "time": "2026-11-24T04:57:00.818000+00:00"
+    },
+    {
+      "order_id": 11016007675000343,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.52,
+      "size": 0.01,
+      "cost_usdt": 0.72,
+      "time": "2026-11-24T04:57:00.818000+00:00"
+    },
+    {
+      "order_id": 11016007675000343,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.52,
+      "size": 0.01,
+      "cost_usdt": 0.72,
+      "time": "2026-11-24T04:57:00.818000+00:00"
+    },
+    {
+      "order_id": 11016007675000343,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.52,
+      "size": 0.04,
+      "cost_usdt": 2.86,
+      "time": "2026-11-24T04:57:00.813000+00:00"
+    },
+    {
+      "order_id": 11016007675000343,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.52,
+      "size": 0.06,
+      "cost_usdt": 4.29,
+      "time": "2026-11-24T04:57:00.813000+00:00"
+    },
+    {
+      "order_id": 11016007675000343,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.52,
+      "size": 0.06,
+      "cost_usdt": 4.29,
+      "time": "2026-11-24T04:57:00.813000+00:00"
+    },
+    {
+      "order_id": 11016007675000343,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.52,
+      "size": 0.01,
+      "cost_usdt": 0.72,
+      "time": "2026-11-24T04:57:00.813000+00:00"
+    },
+    {
+      "order_id": 11016007675000343,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.52,
+      "size": 0.02,
+      "cost_usdt": 1.43,
+      "time": "2026-11-24T04:57:00.813000+00:00"
+    },
+    {
+      "order_id": 11016007675000343,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.52,
+      "size": 0.05,
+      "cost_usdt": 3.58,
+      "time": "2026-11-24T04:57:00.813000+00:00"
+    },
+    {
+      "order_id": 11016007675000343,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.52,
+      "size": 0.05,
+      "cost_usdt": 3.58,
+      "time": "2026-11-24T04:57:00.813000+00:00"
+    },
+    {
+      "order_id": 11016007675000343,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.52,
+      "size": 0.06,
+      "cost_usdt": 4.29,
+      "time": "2026-11-24T04:57:00.813000+00:00"
+    },
+    {
+      "order_id": 11016007675000343,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.52,
+      "size": 0.01,
+      "cost_usdt": 0.72,
+      "time": "2026-11-24T04:57:00.813000+00:00"
+    },
+    {
+      "order_id": 11016007675000343,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.52,
+      "size": 0.01,
+      "cost_usdt": 0.72,
+      "time": "2026-11-24T04:57:00.813000+00:00"
+    },
     {
       "order_id": 11016007674999964,
       "side": "BUY",
-      "source": "MANUAL",
+      "source": "BOT",
       "price": 71.71,
       "size": 0.745503,
       "cost_usdt": 53.46,
       "time": "2026-11-24T04:50:32.957000+00:00"
-    },
-    {
-      "order_id": 11016007674992932,
-      "side": "SELL",
-      "source": "BOT",
-      "price": 71.3,
-      "size": 0.75,
-      "cost_usdt": 53.47,
-      "time": "2026-11-24T03:56:39.481000+00:00"
-    },
-    {
-      "order_id": 11016007674889099,
-      "side": "BUY",
-      "source": "BOT",
-      "price": 73.89,
-      "size": 0.747598,
-      "cost_usdt": 55.24,
-      "time": "2026-11-23T17:29:04.086000+00:00"
-    },
-    {
-      "order_id": 11016007674888564,
-      "side": "SELL",
-      "source": "BOT",
-      "price": 74.03,
-      "size": 0.04,
-      "cost_usdt": 2.96,
-      "time": "2026-11-23T17:27:30.027000+00:00"
-    },
-    {
-      "order_id": 11016007674888564,
-      "side": "SELL",
-      "source": "BOT",
-      "price": 74.03,
-      "size": 0.13,
-      "cost_usdt": 9.62,
-      "time": "2026-11-23T17:27:30.027000+00:00"
-    },
-    {
-      "order_id": 11016007674888564,
-      "side": "SELL",
-      "source": "BOT",
-      "price": 74.03,
-      "size": 0.03,
-      "cost_usdt": 2.22,
-      "time": "2026-11-23T17:27:30.027000+00:00"
-    },
-    {
-      "order_id": 11016007674888564,
-      "side": "SELL",
-      "source": "BOT",
-      "price": 74.03,
-      "size": 0.01,
-      "cost_usdt": 0.74,
-      "time": "2026-11-23T17:27:30.025000+00:00"
-    },
-    {
-      "order_id": 11016007674471933,
-      "side": "BUY",
-      "source": "BOT",
-      "price": 70.36,
-      "size": 0.209068,
-      "cost_usdt": 14.71,
-      "time": "2026-11-22T00:54:01.148000+00:00"
     }
   ]
 }
