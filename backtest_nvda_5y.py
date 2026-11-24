@@ -19,8 +19,8 @@ RSI_WINDOW = 14
 ADX_MIN_ENTRY = 25.0
 RSI_MIN_ENTRY = 45.0
 RSI_MAX_ENTRY = 68.0
-RSI_EXIT = 75.0
-STOP_LOSS_PCT = 0.04  # -4.0%
+RSI_EXIT = 80.0
+STOP_LOSS_PCT = 0.08  # -8.0%
 
 
 def load_2y_hourly_data(symbol: str, years: int, warmup_days: int) -> pd.DataFrame:
@@ -156,7 +156,7 @@ def main() -> None:
     ind_df = add_indicators(raw_df)
     res = run_backtest(ind_df)
 
-    print(f"=== {SYMBOL} ~2 ÉVES VISSZATESZT (1H - FINOMÍTOTT) ===")
+    print(f"=== {SYMBOL} ~2 ÉVES VISSZATESZT (1H - STOP -8%, RSI EXIT 80) ===")
     print(f"Kezdő tőke:         {res['initial_capital']:,.2f} USD")
     print(f"Végső tőke:         {res['final_equity']:,.2f} USD")
     print(f"Stratégia hozam:   {res['total_return_pct']:+.2f}%")
