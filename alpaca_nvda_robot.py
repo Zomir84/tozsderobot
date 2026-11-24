@@ -1,7 +1,8 @@
 import os
 from datetime import datetime, timedelta, timezone
-import numpy as np
 import pandas as pd
+from ta.momentum import RSIIndicator
+from ta.trend import ADXIndicator, SMAIndicator
 
 from alpaca.data.enums import DataFeed
 from alpaca.data.historical import StockHistoricalDataClient
@@ -15,63 +16,34 @@ from alpaca.trading.requests import GetOrdersRequest, MarketOrderRequest
 SYMBOL = "NVDA"
 MA_FAST = 10
 MA_SLOW = 30
-ADX_PERIOD = 14
-RSI_PERIOD = 14
+ADX_WINDOW = 14
+RSI_WINDOW = 14
 
 ADX_MIN_ENTRY = 20.0
-RSI_MAX_ENTRY = 70.0
+RSI_MIN_ENTRY = 40.0
+RSI_MAX_ENTRY = 72.0
 RSI_EXIT = 80.0
 
-# Pozícióméret: a számla elérhető készpénzének legfeljebb hány százalékát használja egy belépésnél
-ALLOCATION_PCT = 0.25
+ALLOCATION_PCT = 0.15
 
 
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
-    out["ma_fast"] = out["close"].rolling(window=MA_FAST).mean()
-    out["ma_slow"] = out["close"].rolling(window=MA_SLOW).mean()
+    out["ma_fast"] = SMAIndicator(close=out["close"], window=MA_FAST).sma_indicator()
+    out["ma_slow"] = SMAIndicator(close=out["close"], window=MA_SLOW).sma_indicator()
+    out["rsi"] = RSIIndicator(close=out["close"], window=RSI_WINDOW).rsi()
 
-    # RSI (Wilder simítás)
-    delta = out["close"].diff()
-    gain = delta.clip(lower=0.0)
-    loss = (-delta).clip(lower=0.0)
-    avg_gain = gain.ewm(alpha=1.0 / RSI_PERIOD, min_periods=RSI_PERIOD, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1.0 / RSI_PERIOD, min_periods=RSI_PERIOD, adjust=False).mean()
-    rs = avg_gain / avg_loss.replace(0.0, np.nan)
-    out["rsi"] = 100.0 - (100.0 / (1.0 + rs))
-
-    # ADX (Wilder simítás)
-    high = out["high"]
-    low = out["low"]
-    close = out["close"]
-
-    up_move = high.diff()
-    down_move = -low.diff()
-
-    plus_dm = np.where((up_move > down_move) & (up_move > 0.0), up_move, 0.0)
-    minus_dm = np.where((down_move > up_move) & (down_move > 0.0), down_move, 0.0)
-
-    tr1 = high - low
-    tr2 = (high - close.shift(1)).abs()
-    tr3 = (low - close.shift(1)).abs()
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-
-    atr = tr.ewm(alpha=1.0 / ADX_PERIOD, min_periods=ADX_PERIOD, adjust=False).mean()
-    plus_di = 100.0 * pd.Series(plus_dm, index=out.index).ewm(
-        alpha=1.0 / ADX_PERIOD, min_periods=ADX_PERIOD, adjust=False
-    ).mean() / atr.replace(0.0, np.nan)
-    minus_di = 100.0 * pd.Series(minus_dm, index=out.index).ewm(
-        alpha=1.0 / ADX_PERIOD, min_periods=ADX_PERIOD, adjust=False
-    ).mean() / atr.replace(0.0, np.nan)
-
-    dx = 100.0 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0.0, np.nan)
-    out["adx"] = dx.ewm(alpha=1.0 / ADX_PERIOD, min_periods=ADX_PERIOD, adjust=False).mean()
-
+    adx_ind = ADXIndicator(
+        high=out["high"],
+        low=out["low"],
+        close=out["close"],
+        window=ADX_WINDOW,
+    )
+    out["adx"] = adx_ind.adx()
     return out
 
 
 def fetch_nvda_bars(data_client: StockHistoricalDataClient) -> pd.DataFrame:
-    # Bőséges visszatekintés a hétvégék, ünnepek és MA30/ADX/RSI bemelegedése miatt
     start_dt = datetime.now(timezone.utc) - timedelta(days=45)
     request = StockBarsRequest(
         symbol_or_symbols=[SYMBOL],
@@ -116,14 +88,12 @@ def main() -> None:
     raw_df = fetch_nvda_bars(data_client)
     ind_df = compute_indicators(raw_df).dropna(subset=["ma_fast", "ma_slow", "adx", "rsi"])
 
-    if len(ind_df) < 2:
+    if ind_df.empty:
         raise RuntimeError("Nincs elég feldolgozható gyertya az indikátorok kiértékeléséhez.")
 
-    prev = ind_df.iloc[-2]
     curr = ind_df.iloc[-1]
-
-    ma_cross_up = (prev["ma_fast"] <= prev["ma_slow"]) and (curr["ma_fast"] > curr["ma_slow"])
-    ma_cross_down = (prev["ma_fast"] >= prev["ma_slow"]) and (curr["ma_fast"] < curr["ma_slow"])
+    trend_up = curr["ma_fast"] > curr["ma_slow"]
+    trend_down = curr["ma_fast"] < curr["ma_slow"]
 
     print(
         f"{SYMBOL} utolsó gyertya ({curr.name}) | close={curr['close']:.2f} | "
@@ -150,7 +120,7 @@ def main() -> None:
     print(f"Jelenlegi pozíció | has_position={has_position} | qty={qty_held}")
 
     if has_position:
-        if ma_cross_down or curr["rsi"] >= RSI_EXIT:
+        if trend_down or curr["rsi"] >= RSI_EXIT:
             order_req = MarketOrderRequest(
                 symbol=SYMBOL,
                 qty=qty_held,
@@ -160,12 +130,12 @@ def main() -> None:
             order = trading_client.submit_order(order_req)
             print(f"ELADÁSI megbízás elküldve | id={order.id} | qty={qty_held}")
         else:
-            print("Pozíció tartása: kilépési feltétel nem teljesült.")
+            print("Pozíció tartása: trend és RSI még nem indokol eladást.")
     else:
         entry_ok = (
-            ma_cross_up
+            trend_up
             and (curr["adx"] >= ADX_MIN_ENTRY)
-            and (curr["rsi"] < RSI_MAX_ENTRY)
+            and (RSI_MIN_ENTRY <= curr["rsi"] <= RSI_MAX_ENTRY)
         )
         if entry_ok:
             account = trading_client.get_account()
