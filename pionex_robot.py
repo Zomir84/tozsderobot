@@ -20,6 +20,7 @@ MINIMUM_TET_USDT = 11.0           # Pionex minimum megbízás feletti biztonság
 STOP_LOSS_SZAZALEK = 0.06         # Alap 6%-os veszteségvágó
 LEPCSO_SZAZALEK = 0.04            # Minden további +4% új lépcső
 VISSZAHUZAS_SZAZALEK = 0.015      # +4% elérése után a csúcsárból -1.5% visszahúzódásnál zár
+MA_ELADAS_MIN_PROFIT_PCT = 0.5    # MA10 < MA30 csak legalább +0.5% nyereségnél zár
 KORAI_BELEPES = True              # Korai belépés az emelkedés elején (MA5/MA15 vagy emelkedő MA10)
 ALAP_TIZEDES_PONTOSSAG = 2        # Tartalék tizedespontosság, ha az API-lekérés nem elérhető
 
@@ -466,8 +467,9 @@ def futtatas():
                 stop_loss_ar = alap_sl
 
         stop_loss_aktiv = (ar <= stop_loss_ar) if stop_loss_ar else False
+        ma_eladas_jel = (ma10 < ma30) and (profit_pct >= MA_ELADAS_MIN_PROFIT_PCT)
 
-        if stop_loss_aktiv or ma10 < ma30:
+        if stop_loss_aktiv or ma_eladas_jel:
             if stop_loss_aktiv:
                 if trailing_aktiv:
                     ok = (
@@ -477,7 +479,7 @@ def futtatas():
                 else:
                     ok = f"STOP-LOSS (-{int(STOP_LOSS_SZAZALEK*100)}%)"
             else:
-                ok = "ELADÁSI JELZÉS (MA10 < MA30)"
+                ok = f"ELADÁSI JELZÉS (MA10 < MA30, +{profit_pct:.2f}%)"
 
             if TESZT_MOD:
                 dontes = "TESZT ELADÁS"
