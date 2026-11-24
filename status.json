@@ -1,13 +1,13 @@
 {
-  "updated_at": "2026-11-24T04:37:43.123752+00:00",
+  "updated_at": "2026-11-24T04:41:49.443430+00:00",
   "symbol": "SOL_USDT",
   "base_coin": "SOL",
   "quote_coin": "USDT",
-  "price": 71.82,
+  "price": 71.79,
   "ma10": 71.96,
-  "ma30": 72.37,
+  "ma30": 72.36,
   "adx": 22.5,
-  "rsi": 47.5,
+  "rsi": 47.3,
   "free_usdt": 54.0029,
   "free_crypto": 0.005967,
   "next_bet_usdt": 53.46,
@@ -26,8 +26,8 @@
   "profit_usdt": 0.0,
   "status": "VÁRAKOZÁS",
   "status_detail": "Nincs nyitott pozíció és nincs vételi jelzés.",
-  "adx_min": 20,
-  "rsi_max": 70,
+  "adx_min": 15,
+  "rsi_max": 72,
   "recent_trades": [
     {
       "order_id": 11016007674992932,
