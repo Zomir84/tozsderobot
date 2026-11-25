@@ -1,15 +1,15 @@
 {
-  "updated_at": "2026-11-25T14:59:40.467626+00:00",
+  "updated_at": "2026-11-25T15:15:43.025720+00:00",
   "symbol": "SOL_USDT",
   "base_coin": "SOL",
   "quote_coin": "USDT",
-  "price": 67.4,
-  "pionex_price": 67.4,
-  "yf_price": 67.35,
-  "ma10": 67.79,
-  "ma30": 68.95,
-  "adx": 35.9,
-  "rsi": 37.1,
+  "price": 66.86,
+  "pionex_price": 66.86,
+  "yf_price": 66.74,
+  "ma10": 67.59,
+  "ma30": 68.82,
+  "adx": 36.0,
+  "rsi": 33.5,
   "free_usdt": 51.3481,
   "free_crypto": 0.000198,
   "next_bet_usdt": 50.83,
@@ -167,22 +167,5 @@
       "cost_usdt": 0.72,
       "time": "2026-11-24T04:57:00.813000+00:00"
     }
-  ],
-  "nvda": {
-    "updated_at": "2026-11-25T15:02:57.703905+00:00",
-    "mode": "paper",
-    "market_open": true,
-    "bar_timestamp": "2026-11-25 15:00:00+00:00",
-    "close": 145.66,
-    "ma10": 150.81,
-    "ma30": 150.73,
-    "adx": 23.8,
-    "rsi": 40.49,
-    "has_position": true,
-    "qty_held": 325.0,
-    "avg_entry_price": 153.88,
-    "action": "sell",
-    "order_id": "a2b425ff-3de5-447b-b52c-ed54683cadbc",
-    "order_qty": 325.0
-  }
+  ]
 }
