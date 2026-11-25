@@ -1,15 +1,15 @@
 {
-  "updated_at": "2026-11-25T12:55:34.682673+00:00",
+  "updated_at": "2026-11-25T13:41:53.417990+00:00",
   "symbol": "SOL_USDT",
   "base_coin": "SOL",
   "quote_coin": "USDT",
-  "price": 67.79,
-  "pionex_price": 67.79,
-  "yf_price": 67.69,
-  "ma10": 68.15,
-  "ma30": 69.23,
-  "adx": 32.2,
-  "rsi": 35.7,
+  "price": 67.24,
+  "pionex_price": 67.24,
+  "yf_price": 67.16,
+  "ma10": 67.96,
+  "ma30": 69.09,
+  "adx": 33.7,
+  "rsi": 32.5,
   "free_usdt": 51.3481,
   "free_crypto": 0.000198,
   "next_bet_usdt": 50.83,
@@ -167,12 +167,5 @@
       "cost_usdt": 0.72,
       "time": "2026-11-24T04:57:00.813000+00:00"
     }
-  ],
-  "nvda": {
-    "updated_at": "2026-11-25T13:18:46.700216+00:00",
-    "mode": "paper",
-    "market_open": false,
-    "action": "market_closed",
-    "message": "A piac jelenleg zárva van."
-  }
+  ]
 }
