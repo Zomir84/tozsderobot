@@ -165,5 +165,12 @@
       "cost_usdt": 0.72,
       "time": "2026-11-24T04:57:00.813000+00:00"
     }
-  ]
+  ],
+  "nvda": {
+    "updated_at": "2026-11-25T04:00:47.247512+00:00",
+    "mode": "paper",
+    "market_open": false,
+    "action": "market_closed",
+    "message": "A piac jelenleg zárva van."
+  }
 }
