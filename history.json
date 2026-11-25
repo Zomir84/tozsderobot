@@ -406,5 +406,11 @@
     "total_usd": 51.33,
     "price": 68.14,
     "status": "KÉZI VÉTEL"
+  },
+  {
+    "time": "2026-11-25T17:32:30.844350+00:00",
+    "total_usd": 51.88,
+    "price": 68.92,
+    "status": "ELADÁS"
   }
 ]
