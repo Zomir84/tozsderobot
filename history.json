@@ -400,5 +400,11 @@
     "total_usd": 51.36,
     "price": 67.24,
     "status": "VÁRAKOZÁS"
+  },
+  {
+    "time": "2026-11-25T16:23:40.993870+00:00",
+    "total_usd": 51.33,
+    "price": 68.14,
+    "status": "KÉZI VÉTEL"
   }
 ]
