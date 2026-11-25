@@ -418,5 +418,11 @@
     "total_usd": 51.84,
     "price": 68.95,
     "status": "VÉTEL"
+  },
+  {
+    "time": "2026-11-25T17:56:59.546317+00:00",
+    "total_usd": 52.21,
+    "price": 69.48,
+    "status": "ELADÁS"
   }
 ]
