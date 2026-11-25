@@ -5,20 +5,13 @@ import hmac
 import json
 import math
 import hashlib
-import subprocess
 from datetime import datetime, timezone
 import requests
 import yfinance as yf
 import ta
 
-# --- FUTTATÁSI ÉS TRENDKÖVETŐ BEÁLLÍTÁSOK ---
+# --- BEÁLLÍTÁSOK (GITHUB ACTIONS) ---
 TESZT_MOD = False                       # Éles mód (a robot kereskedik)
-FOLYAMATOS_MOD = True                   # True: folyamatos hurok | False: egyetlen futás
-CIKLUSSZUNET_MP = 45                    # 45 másodpercenként ellenőriz a folyamatos hurokban
-GITHUB_PUSH_MOD = False                 # True: frissíti a status.json/history.json fájlokat GitHubon
-GITHUB_PUSH_INTERVAL_MP = 300           # Állapotváltozás nélkül hány mp-ként pusholjon (ha engedélyezve van)
-HIBA_ERTESITES_SZUNET_MP = 900          # Hiba esetén legalább 15 percenként küld Telegram hibát (ne spammeljen)
-
 YF_SZIMBOLUM = "SOL-USD"                # Yahoo Finance jelölés
 PIONEX_SZIMBOLUM = "SOL_USDT"           # Pionex pár
 ALAP_COIN = "SOL"                       # Megvásárolt kriptó
@@ -241,28 +234,6 @@ def profit_gorbe_mentese(teljes_usd, aktualis_ar, allapot):
         with open(fajl, "w", encoding="utf-8") as f:
             json.dump(elozmenyek, f, ensure_ascii=False, indent=2)
         print(f"Profit-görbe frissítve ({len(elozmenyek)} pont a history.json-ban).")
-
-
-def github_allapot_feltoltese(dontes, utolso_push_ido):
-    if not GITHUB_PUSH_MOD:
-        return utolso_push_ido
-    most_ts = time.time()
-    fontos_esemeny = dontes in ("VÉTEL", "KÉZI VÉTEL", "ELADÁS")
-    if not fontos_esemeny and (most_ts - utolso_push_ido) < GITHUB_PUSH_INTERVAL_MP:
-        return utolso_push_ido
-
-    try:
-        subprocess.run(["git", "add", "status.json", "history.json"], check=True)
-        diff = subprocess.run(["git", "diff", "--cached", "--quiet"])
-        if diff.returncode != 0:
-            uzenet = f"Laptop robot frissítés ({dontes}) - {datetime.now(timezone.utc).strftime('%H:%M UTC')}"
-            subprocess.run(["git", "commit", "-m", uzenet], check=True)
-            subprocess.run(["git", "push"], check=True)
-            print("GitHub dashboard fájlok (status.json, history.json) feltöltve.")
-        return most_ts
-    except Exception as hiba:
-        print(f"Figyelmeztetés: GitHub push sikertelen ({hiba})")
-        return utolso_push_ido
 
 
 def eladasi_telegram_ertesites(ok, bazis_ar, eladasi_ar, profit_pct, profit_usdt, uj_usdt):
@@ -685,43 +656,15 @@ def futtatas():
     print("Dashboard status.json sikeresen elmentve.")
 
     profit_gorbe_mentese(szabad_usdt + pozicio_ertek_usd, ar, dontes)
-    return dontes
-
-
-def folytonos_futtatas():
-    print(f"Folyamatos robot elindítva ({PIONEX_SZIMBOLUM}, ciklus: {CIKLUSSZUNET_MP} mp). Leállítás: Ctrl+C")
-    utolso_push_ido = 0.0
-    utolso_hiba_ertesites = 0.0
-
-    while True:
-        try:
-            dontes = futtatas()
-            utolso_push_ido = github_allapot_feltoltese(dontes, utolso_push_ido)
-        except KeyboardInterrupt:
-            print("\nRobot leállítva a felhasználó által (Ctrl+C).")
-            break
-        except Exception as hiba:
-            print(f"ROBOT HIBA (folytatás {CIKLUSSZUNET_MP} mp múlva): {hiba}")
-            most_ts = time.time()
-            if (most_ts - utolso_hiba_ertesites) >= HIBA_ERTESITES_SZUNET_MP:
-                utolso_hiba_ertesites = most_ts
-                telegram_uzenet(
-                    f"⚠️ ROBOT HIBA (folyamatos mód) | {PIONEX_SZIMBOLUM}\n"
-                    f"Hibaüzenet: {hiba}"
-                )
-        time.sleep(CIKLUSSZUNET_MP)
 
 
 if __name__ == "__main__":
-    if FOLYAMATOS_MOD:
-        folytonos_futtatas()
-    else:
-        try:
-            futtatas()
-        except Exception as hiba:
-            print(f"ROBOT HIBA: {hiba}")
-            telegram_uzenet(
-                f"⚠️ ROBOT HIBA | {PIONEX_SZIMBOLUM}\n"
-                f"Hibaüzenet: {hiba}"
-            )
-            sys.exit(1)
+    try:
+        futtatas()
+    except Exception as hiba:
+        print(f"ROBOT HIBA: {hiba}")
+        telegram_uzenet(
+            f"⚠️ ROBOT HIBA | {PIONEX_SZIMBOLUM}\n"
+            f"Hibaüzenet: {hiba}"
+        )
+        sys.exit(1)
