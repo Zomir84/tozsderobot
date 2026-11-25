@@ -167,5 +167,22 @@
       "cost_usdt": 0.72,
       "time": "2026-11-24T04:57:00.813000+00:00"
     }
-  ]
+  ],
+  "nvda": {
+    "updated_at": "2026-11-25T15:02:57.703905+00:00",
+    "mode": "paper",
+    "market_open": true,
+    "bar_timestamp": "2026-11-25 15:00:00+00:00",
+    "close": 145.66,
+    "ma10": 150.81,
+    "ma30": 150.73,
+    "adx": 23.8,
+    "rsi": 40.49,
+    "has_position": true,
+    "qty_held": 325.0,
+    "avg_entry_price": 153.88,
+    "action": "sell",
+    "order_id": "a2b425ff-3de5-447b-b52c-ed54683cadbc",
+    "order_qty": 325.0
+  }
 }
