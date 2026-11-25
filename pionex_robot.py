@@ -10,23 +10,27 @@ import yfinance as yf
 import ta
 
 # --- BEÁLLÍTÁSOK ---
-TESZT_MOD = False                 # Éles mód (a robot kereskedik)
-YF_SZIMBOLUM = "SOL-USD"          # Yahoo Finance jelölés
-PIONEX_SZIMBOLUM = "SOL_USDT"     # Pionex pár
-ALAP_COIN = "SOL"                 # Megvásárolt kriptó
-JEGYZESI_COIN = "USDT"            # Amivel fizetsz
-TET_SZAZALEK = 0.99               # A szabad USDT 99%-át költi egy vételre
-MINIMUM_TET_USDT = 11.0           # Pionex minimum megbízás feletti biztonsági határ
-STOP_LOSS_SZAZALEK = 0.06         # Alap 6%-os veszteségvágó
-LEPCSO_SZAZALEK = 0.04            # Minden további +4% új lépcső
-VISSZAHUZAS_SZAZALEK = 0.015      # +4% elérése után a csúcsárból -1.5% visszahúzódásnál zár
-MA_ELADAS_MIN_PROFIT_PCT = 0.5    # MA10 < MA30 csak legalább +0.5% nyereségnél zár
-KORAI_BELEPES = True              # Korai belépés az emelkedés elején (MA5/MA15 vagy emelkedő MA10)
-ALAP_TIZEDES_PONTOSSAG = 2        # Tartalék tizedespontosság, ha az API-lekérés nem elérhető
+TESZT_MOD = False                       # Éles mód (a robot kereskedik)
+YF_SZIMBOLUM = "SOL-USD"                # Yahoo Finance jelölés
+PIONEX_SZIMBOLUM = "SOL_USDT"           # Pionex pár
+ALAP_COIN = "SOL"                       # Megvásárolt kriptó
+JEGYZESI_COIN = "USDT"                  # Amivel fizetsz
+TET_SZAZALEK = 0.99                     # A szabad USDT 99%-át költi egy vételre
+MINIMUM_TET_USDT = 11.0                 # Pionex minimum megbízás feletti biztonsági határ
+STOP_LOSS_SZAZALEK = 0.06               # Alap 6%-os veszteségvágó
+LEPCSO_SZAZALEK = 0.04                  # Minden további +4% új lépcső
+VISSZAHUZAS_SZAZALEK = 0.015            # +4% elérése után a csúcsárból -1.5% visszahúzódásnál zár
+KORAI_PROFIT_VEDELEM_KUSZOB_PCT = 2.0   # +2.0% nyereségnél aktiválja a korai profitvédő visszahúzást
+KORAI_PROFIT_VISSZAHUZAS_PCT = 1.2     # +2.0%..+4.0% között a csúcsból -1.2% esésnél zár
+MA_ELADAS_MIN_PROFIT_PCT = 0.5          # MA10 < MA30 csak legalább +0.5% nyereségnél zár
+KORAI_BELEPES = True                    # Szűrt korai belépés emelkedő momentum mellett
+ALAP_TIZEDES_PONTOSSAG = 2              # Tartalék tizedespontosság, ha az API-lekérés nem elérhető
 
 # --- SZŰRŐK ---
-ADX_MINIMUM = 15                  # 15 alatt gyenge/oldalazó mozgás, nem vesz
-RSI_MAXIMUM = 72                  # 72 felett túlvásárolt, nem vesz
+ADX_MINIMUM = 18                        # 18 alatt gyenge/oldalazó mozgás, nem vesz
+RSI_MAXIMUM = 70                        # 70 felett túlvásárolt, nem vesz
+KORAI_RSI_MA5_MIN = 42.0                # MA5 > MA15 korai belépéshez minimum RSI
+KORAI_RSI_MA10_MIN = 48.0               # Emelkedő MA10 korai belépéshez minimum RSI
 # --------------
 
 API_KEY = os.environ["PIONEX_API_KEY"].strip()
@@ -83,6 +87,28 @@ def pionex_keres(method, path, params=None, body=None):
     return adat["data"]
 
 
+def pionex_aktualis_ar(szimbolum, tartalek_ar):
+    try:
+        valasz = requests.get(
+            f"{BASE_URL}/api/v1/market/tickers",
+            params={"symbol": szimbolum, "type": "SPOT"},
+            timeout=10
+        )
+        adat = valasz.json()
+        if adat.get("result"):
+            tickers = adat.get("data", {}).get("tickers", [])
+            for t in tickers:
+                if t.get("symbol") == szimbolum:
+                    for kulcs in ("close", "price", "lastPrice"):
+                        if t.get(kulcs) is not None:
+                            ar_val = float(t[kulcs])
+                            if ar_val > 0:
+                                return ar_val
+    except Exception as hiba:
+        print(f"Figyelmeztetés: nem sikerült lekérni a {szimbolum} élő Pionex árát ({hiba}), tartalék ár: {tartalek_ar:.2f}")
+    return float(tartalek_ar)
+
+
 def lekerdezd_mennyiseg_pontossag(szimbolum, alap_pontossag=ALAP_TIZEDES_PONTOSSAG):
     try:
         adat = pionex_keres("GET", "/api/v1/common/symbols", params={"symbols": szimbolum})
@@ -131,23 +157,33 @@ def utolso_kotesek(szimbolum, manual_order_ids=None, limit=15):
     return kotesek
 
 
-def utolso_vetel_adatok(kotesek):
+def utolso_vetel_adatok(kotesek, manual_buys=None):
     elso_buy = next((k for k in kotesek if k.get("side") == "BUY"), None)
-    if not elso_buy:
+    if not elso_buy and not manual_buys:
         return None
-    oid = elso_buy.get("order_id")
-    if oid is not None:
-        azonos = [k for k in kotesek if k.get("side") == "BUY" and k.get("order_id") == oid]
-    else:
-        azonos = [elso_buy]
-    ossz_meret = sum(k["size"] for k in azonos)
-    ossz_usdt = sum(k["price"] * k["size"] for k in azonos)
-    atlag_ar = ossz_usdt / ossz_meret if ossz_meret > 0 else elso_buy["price"]
+
+    if elso_buy:
+        oid = elso_buy.get("order_id")
+        if oid is not None:
+            azonos = [k for k in kotesek if k.get("side") == "BUY" and k.get("order_id") == oid]
+        else:
+            azonos = [elso_buy]
+        ossz_meret = sum(k["size"] for k in azonos)
+        ossz_usdt = sum(k["price"] * k["size"] for k in azonos)
+        atlag_ar = ossz_usdt / ossz_meret if ossz_meret > 0 else elso_buy["price"]
+        return {
+            "price": round(atlag_ar, 2),
+            "size": round(ossz_meret, 6),
+            "cost_usdt": round(ossz_usdt, 2),
+            "time": elso_buy["time"]
+        }
+
+    utolso_man = manual_buys[-1]
     return {
-        "price": round(atlag_ar, 2),
-        "size": round(ossz_meret, 6),
-        "cost_usdt": round(ossz_usdt, 2),
-        "time": elso_buy["time"]
+        "price": round(float(utolso_man["price"]), 2),
+        "size": round(float(utolso_man["size"]), 6),
+        "cost_usdt": round(float(utolso_man["cost_usdt"]), 2),
+        "time": utolso_man.get("time")
     }
 
 
@@ -209,7 +245,7 @@ def futtatas():
     szabad_kripto = szabad_egyenleg(ALAP_COIN)
     veteli_osszeg = round(szabad_usdt * TET_SZAZALEK, 2)
     kotesek = utolso_kotesek(PIONEX_SZIMBOLUM, manual_order_ids=manual_order_ids)
-    vetel_info = utolso_vetel_adatok(kotesek)
+    vetel_info = utolso_vetel_adatok(kotesek, manual_buys=manual_buys)
 
     print(
         f"Pionex API kapcsolat OK! ({PIONEX_SZIMBOLUM} tizedespontosság: {tizedes_pontossag}) | "
@@ -230,7 +266,8 @@ def futtatas():
     ).adx()
     adatok["RSI"] = ta.momentum.RSIIndicator(close=adatok["Close"], window=14).rsi()
 
-    ar = float(adatok["Close"].iloc[-1])
+    yf_ar = float(adatok["Close"].iloc[-1])
+    ar = pionex_aktualis_ar(PIONEX_SZIMBOLUM, yf_ar)
     ma5 = float(adatok["MA5"].iloc[-1])
     ma10 = float(adatok["MA10"].iloc[-1])
     elozo_ma10 = float(adatok["MA10"].iloc[-2]) if len(adatok) >= 2 else ma10
@@ -240,20 +277,21 @@ def futtatas():
     rsi = float(adatok["RSI"].iloc[-1])
 
     print(
-        f"{PIONEX_SZIMBOLUM} ár: {ar:.2f} | MA5/MA15: {ma5:.2f}/{ma15:.2f} | "
+        f"{PIONEX_SZIMBOLUM} élő ár: {ar:.2f} (YF: {yf_ar:.2f}) | MA5/MA15: {ma5:.2f}/{ma15:.2f} | "
         f"MA10/MA30: {ma10:.2f}/{ma30:.2f} | ADX: {adx:.1f} | RSI: {rsi:.1f}"
     )
 
     pozicio_ertek_usd = szabad_kripto * ar
     van_pozicio = pozicio_ertek_usd >= 10.0
 
-    korai_emelked_jel = (
-        KORAI_BELEPES and ((ma5 > ma15) or (ar > ma10 and ma10 > elozo_ma10))
-    )
-    veteli_jel = (ma10 > ma30) or korai_emelked_jel
+    korai_ma5_jel = (ma5 > ma15) and (rsi >= KORAI_RSI_MA5_MIN)
+    korai_ma10_jel = (ar > ma10) and (ma10 > elozo_ma10) and (rsi >= KORAI_RSI_MA10_MIN)
+    korai_emelked_jel = KORAI_BELEPES and (korai_ma5_jel or korai_ma10_jel)
+    fo_ma_jel = (ma10 > ma30) and (ma10 >= elozo_ma10 * 0.998)
+    veteli_jel = fo_ma_jel or korai_emelked_jel
 
     dontes = "VÁRAKOZÁS"
-    dontes_reszlet = "Nincs nyitott pozíció és nincs vételi jelzés."
+    dontes_reszlet = "Nincs nyitott pozíció és nincs szűrt vételi jelzés."
     veteli_ar = vetel_info["price"] if (van_pozicio and vetel_info) else None
     veteli_ido = vetel_info["time"] if (van_pozicio and vetel_info) else None
     veteli_meret = vetel_info["size"] if (van_pozicio and vetel_info) else None
@@ -269,8 +307,9 @@ def futtatas():
     eladhato_most = lefele_kerekit(szabad_kripto, tizedes_pontossag)
 
     if kenyszertett_eladas and eladhato_most > 0:
-        profit_pct = ((ar - veteli_ar) / veteli_ar) * 100 if veteli_ar else 0.0
-        profit_usdt = (ar - veteli_ar) * eladhato_most if veteli_ar else 0.0
+        bázis_ar = veteli_ar or (float(elozo["entry_price"]) if elozo.get("entry_price") else ar)
+        profit_pct = ((ar - bázis_ar) / bázis_ar) * 100 if bázis_ar else 0.0
+        profit_usdt = (ar - bázis_ar) * eladhato_most if bázis_ar else 0.0
         ok = "MANUÁLIS AZONNALI ELADÁS (APP GOMB)"
 
         if TESZT_MOD:
@@ -361,7 +400,7 @@ def futtatas():
             pozicio_ertek_usd = szabad_kripto * ar
             van_pozicio = pozicio_ertek_usd >= 10.0
             kotesek = utolso_kotesek(PIONEX_SZIMBOLUM, manual_order_ids=manual_order_ids)
-            vetel_info = utolso_vetel_adatok(kotesek)
+            vetel_info = utolso_vetel_adatok(kotesek, manual_buys=manual_buys)
 
             veteli_ar = vetel_info["price"] if vetel_info else round(ar, 2)
             veteli_ido = vetel_info["time"] if vetel_info else datetime.now(timezone.utc).isoformat()
@@ -386,6 +425,11 @@ def futtatas():
             )
 
     elif veteli_jel and not van_pozicio:
+        belepes_ok = (
+            "MA10 > MA30"
+            if fo_ma_jel
+            else ("Korai MA5 > MA15 + RSI" if korai_ma5_jel else "Korai emelkedő MA10 + RSI")
+        )
         if adx < ADX_MINIMUM:
             dontes = "SZŰRŐ BLOKKOLTA"
             dontes_reszlet = f"Gyenge trend / oldalazás (ADX: {adx:.1f}, min. {ADX_MINIMUM} kell)."
@@ -400,10 +444,9 @@ def futtatas():
             print(f"KEVÉS EGYENLEG -> {dontes_reszlet}")
         elif TESZT_MOD:
             dontes = "TESZT VÉTEL"
-            dontes_reszlet = f"[TESZT MÓD] Vételi jelzés lenne ({veteli_osszeg:.2f} {JEGYZESI_COIN})."
+            dontes_reszlet = f"[TESZT MÓD] Vételi jelzés lenne ({belepes_ok}, {veteli_osszeg:.2f} {JEGYZESI_COIN})."
             print(dontes_reszlet)
         else:
-            belepes_ok = "MA10 > MA30" if ma10 > ma30 else "Korai emelkedés (MA5/MA15 / MA10)"
             print(f"VÉTELI JELZÉS ({belepes_ok}) -> {veteli_osszeg:.2f} {JEGYZESI_COIN} értékű {PIONEX_SZIMBOLUM} vásárlása...")
             eredmeny = pionex_keres("POST", "/api/v1/trade/order", body={
                 "symbol": PIONEX_SZIMBOLUM,
@@ -416,7 +459,7 @@ def futtatas():
             szabad_usdt = szabad_egyenleg(JEGYZESI_COIN)
             szabad_kripto = szabad_egyenleg(ALAP_COIN)
             kotesek = utolso_kotesek(PIONEX_SZIMBOLUM, manual_order_ids=manual_order_ids)
-            vetel_info = utolso_vetel_adatok(kotesek)
+            vetel_info = utolso_vetel_adatok(kotesek, manual_buys=manual_buys)
             veteli_osszeg = round(szabad_usdt * TET_SZAZALEK, 2)
             pozicio_ertek_usd = szabad_kripto * ar
             van_pozicio = pozicio_ertek_usd >= 10.0
@@ -438,40 +481,56 @@ def futtatas():
 
     elif van_pozicio:
         eladhato = lefele_kerekit(szabad_kripto, tizedes_pontossag)
-        profit_pct = ((ar - veteli_ar) / veteli_ar) * 100 if veteli_ar else 0.0
-        profit_usdt = (ar - veteli_ar) * eladhato if veteli_ar else 0.0
+        bázis_ar = veteli_ar or (float(elozo["entry_price"]) if elozo.get("entry_price") else ar)
+        profit_pct = ((ar - bázis_ar) / bázis_ar) * 100 if bázis_ar else 0.0
+        profit_usdt = (ar - bázis_ar) * eladhato if bázis_ar else 0.0
 
         azonos_pozicio = (
             elozo.get("has_position")
             and elozo.get("entry_price") is not None
             and elozo.get("highest_price") is not None
-            and float(elozo.get("entry_price")) <= (veteli_ar or ar)
+            and float(elozo.get("entry_price")) <= (bázis_ar or ar) * 1.01
         )
         if azonos_pozicio:
-            legmagasabb_ar = max(float(elozo["highest_price"]), ar, veteli_ar or ar)
+            legmagasabb_ar = max(float(elozo["highest_price"]), ar, bázis_ar or ar)
         else:
-            legmagasabb_ar = max(ar, veteli_ar or ar)
+            legmagasabb_ar = max(ar, bázis_ar or ar)
 
         lepes_szint = 0
-        if veteli_ar and veteli_ar > 0:
-            alap_sl = veteli_ar * (1 - STOP_LOSS_SZAZALEK)
-            csucs_nyereseg_pct = (legmagasabb_ar - veteli_ar) / veteli_ar
-            lepes_szint = max(0, math.floor(csucs_nyereseg_pct / LEPCSO_SZAZALEK))
+        korai_vedelem_aktiv = False
+        if bázis_ar and bázis_ar > 0:
+            alap_sl = bázis_ar * (1 - STOP_LOSS_SZAZALEK)
+            csucs_nyereseg_pct = ((legmagasabb_ar - bázis_ar) / bázis_ar) * 100.0
+            lepes_szint = max(0, math.floor(csucs_nyereseg_pct / (LEPCSO_SZAZALEK * 100.0)))
 
             if lepes_szint >= 1:
                 trailing_aktiv = True
                 visszahuzasi_sl = legmagasabb_ar * (1 - VISSZAHUZAS_SZAZALEK)
                 stop_loss_ar = max(alap_sl, visszahuzasi_sl)
+            elif csucs_nyereseg_pct >= KORAI_PROFIT_VEDELEM_KUSZOB_PCT:
+                trailing_aktiv = True
+                korai_vedelem_aktiv = True
+                korai_sl = legmagasabb_ar * (1 - (KORAI_PROFIT_VISSZAHUZAS_PCT / 100.0))
+                stop_loss_ar = max(alap_sl, korai_sl)
             else:
                 trailing_aktiv = False
                 stop_loss_ar = alap_sl
 
         stop_loss_aktiv = (ar <= stop_loss_ar) if stop_loss_ar else False
-        ma_eladas_jel = (ma10 < ma30) and (profit_pct >= MA_ELADAS_MIN_PROFIT_PCT)
+        ma_eladas_jel = (
+            (ma10 < ma30) and (profit_pct >= MA_ELADAS_MIN_PROFIT_PCT)
+        ) or (
+            (ar < ma30) and (adx >= 25.0) and (profit_pct <= -1.5)
+        )
 
         if stop_loss_aktiv or ma_eladas_jel:
             if stop_loss_aktiv:
-                if trailing_aktiv:
+                if trailing_aktiv and korai_vedelem_aktiv:
+                    ok = (
+                        f"KORAI PROFITVÉDŐ KÖVETŐ SL (+{KORAI_PROFIT_VEDELEM_KUSZOB_PCT:.1f}% felett, "
+                        f"Csúcs: ${legmagasabb_ar:.2f}, -{KORAI_PROFIT_VISSZAHUZAS_PCT:.1f}%)"
+                    )
+                elif trailing_aktiv:
                     ok = (
                         f"LÉPCSŐZETES KÖVETŐ SL (+{lepes_szint * int(LEPCSO_SZAZALEK * 100)}% lépcső, "
                         f"Csúcs: ${legmagasabb_ar:.2f}, -{VISSZAHUZAS_SZAZALEK * 100:.1f}%)"
@@ -479,7 +538,7 @@ def futtatas():
                 else:
                     ok = f"STOP-LOSS (-{int(STOP_LOSS_SZAZALEK*100)}%)"
             else:
-                ok = f"ELADÁSI JELZÉS (MA10 < MA30, +{profit_pct:.2f}%)"
+                ok = f"TREND / ELADÁSI JELZÉS (MA10={ma10:.2f}, MA30={ma30:.2f}, {profit_pct:+.2f}%)"
 
             if TESZT_MOD:
                 dontes = "TESZT ELADÁS"
@@ -521,12 +580,18 @@ def futtatas():
                 )
         else:
             dontes = "TARTÁS"
-            sl_info = (
-                f" | Lépcső: +{lepes_szint * int(LEPCSO_SZAZALEK * 100)}%, Követő SL: ${stop_loss_ar:.2f} "
-                f"(Csúcs: ${legmagasabb_ar:.2f}, -{VISSZAHUZAS_SZAZALEK * 100:.1f}%)"
-                if trailing_aktiv
-                else f" | SL: ${stop_loss_ar:.2f}"
-            )
+            if trailing_aktiv and korai_vedelem_aktiv:
+                sl_info = (
+                    f" | Korai követő SL: ${stop_loss_ar:.2f} "
+                    f"(Csúcs: ${legmagasabb_ar:.2f}, -{KORAI_PROFIT_VISSZAHUZAS_PCT:.1f}%)"
+                )
+            elif trailing_aktiv:
+                sl_info = (
+                    f" | Lépcső: +{lepes_szint * int(LEPCSO_SZAZALEK * 100)}%, Követő SL: ${stop_loss_ar:.2f} "
+                    f"(Csúcs: ${legmagasabb_ar:.2f}, -{VISSZAHUZAS_SZAZALEK * 100:.1f}%)"
+                )
+            else:
+                sl_info = f" | SL: ${stop_loss_ar:.2f}"
             dontes_reszlet = f"{eladhato} {ALAP_COIN} (~{pozicio_ertek_usd:.2f} USD) | Eredmény: {profit_pct:+.2f}%{sl_info}"
             print(f"TARTÁS -> {dontes_reszlet}")
     else:
@@ -538,6 +603,8 @@ def futtatas():
         "base_coin": ALAP_COIN,
         "quote_coin": JEGYZESI_COIN,
         "price": round(ar, 2),
+        "pionex_price": round(ar, 2),
+        "yf_price": round(yf_ar, 2),
         "ma10": round(ma10, 2),
         "ma30": round(ma30, 2),
         "adx": round(adx, 1),
