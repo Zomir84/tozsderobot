@@ -13,7 +13,7 @@ import ta
 
 # --- FUTTATÁSI ÉS TRENDKÖVETŐ BEÁLLÍTÁSOK ---
 TESZT_MOD = False                       # Éles mód (a robot kereskedik)
-FOLYAMATOS_MOD = True                   # True: folyamatos hurok a laptopon | False: egyetlen futás
+FOLYAMATOS_MOD = False                   # True: folyamatos hurok a laptopon | False: egyetlen futás
 CIKLUSSZUNET_MP = 45                    # Hány másodpercenként ellenőrizzen a folyamatos hurokban
 GITHUB_PUSH_MOD = False                 # True: frissíti a status.json/history.json fájlokat GitHubon
 GITHUB_PUSH_INTERVAL_MP = 300           # Állapotváltozás nélkül hány mp-ként pusholjon (ha engedélyezve van)
