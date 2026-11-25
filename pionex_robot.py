@@ -1,4 +1,3 @@
-
 import os
 import sys
 import time
@@ -266,6 +265,34 @@ def github_allapot_feltoltese(dontes, utolso_push_ido):
         return utolso_push_ido
 
 
+def eladasi_telegram_ertesites(ok, bazis_ar, eladasi_ar, profit_pct, profit_usdt, uj_usdt):
+    veteli_szoveg = f"{bazis_ar:.2f} {JEGYZESI_COIN}" if bazis_ar else "ismeretlen"
+    if profit_usdt >= 0:
+        eredmeny_cimke = f"🟢 NYERESÉG: {profit_pct:+.2f}% ({profit_usdt:+.2f} {JEGYZESI_COIN})"
+    else:
+        eredmeny_cimke = f"🔴 VESZTESÉG: {profit_pct:+.2f}% ({profit_usdt:+.2f} {JEGYZESI_COIN})"
+
+    telegram_uzenet(
+        f"📤 ELADÁS | {PIONEX_SZIMBOLUM}\n"
+        f"{eredmeny_cimke}\n"
+        f"Vételi ár: {veteli_szoveg}\n"
+        f"Eladási ár: {eladasi_ar:.2f} {JEGYZESI_COIN}\n"
+        f"Ok: {ok}\n"
+        f"Új szabad egyenleg: {uj_usdt:.2f} {JEGYZESI_COIN}"
+    )
+
+
+def veteli_telegram_ertesites(kezis, veteli_ar, mennyiseg, osszeg_usdt, indok):
+    cim = f"🟩 KÉZI VÉTEL | {PIONEX_SZIMBOLUM}" if kezis else f"🟦 VÉTEL | {PIONEX_SZIMBOLUM}"
+    telegram_uzenet(
+        f"{cim}\n"
+        f"Vételi ár: {veteli_ar:.2f} {JEGYZESI_COIN}\n"
+        f"Mennyiség: {mennyiseg:.6f} {ALAP_COIN} ({osszeg_usdt:.2f} {JEGYZESI_COIN})\n"
+        f"Nyereség / veszteség: új pozíció (még nincs realizált P/L)\n"
+        f"Indok: {indok}"
+    )
+
+
 def futtatas():
     elozo = elozo_allapot_betoltese()
     manual_buys = list(elozo.get("manual_buys") or [])
@@ -373,14 +400,7 @@ def futtatas():
             dontes = "ELADÁS"
             dontes_reszlet = f"{ok} | Eredmény: {profit_pct:+.2f}% ({profit_usdt:+.2f} {JEGYZESI_COIN})"
 
-            cimke = "🟢 NYERESÉG" if profit_usdt >= 0 else "🔴 VESZTESÉG"
-            telegram_uzenet(
-                f"{cimke} | {PIONEX_SZIMBOLUM} lezárva\n"
-                f"Ok: {ok}\n"
-                f"Eredmény: {profit_pct:+.2f}% ({profit_usdt:+.2f} {JEGYZESI_COIN})\n"
-                f"Eladási ár: {ar:.2f} {JEGYZESI_COIN}\n"
-                f"Új szabad egyenleg: {uj_usdt:.2f} {JEGYZESI_COIN}"
-            )
+            eladasi_telegram_ertesites(ok, bazis_ar, ar, profit_pct, profit_usdt, uj_usdt)
 
     elif kenyszertett_vetel:
         raw_manual_usdt = os.environ.get("MANUAL_BUY_USDT", "").strip()
@@ -449,10 +469,12 @@ def futtatas():
                 f"a robot automatikus logikája érvényes a pozícióra."
             )
 
-            telegram_uzenet(
-                f"🟩 KÉZI VÉTEL | {PIONEX_SZIMBOLUM}\n"
-                f"Összeg: {kezdi_osszeg:.2f} {JEGYZESI_COIN} (~{vasarolt_sol:.4f} {ALAP_COIN} @ ~${ar:.2f})\n"
-                f"A robot stop-loss és követő logikája érvényes a teljes pozícióra."
+            veteli_telegram_ertesites(
+                True,
+                veteli_ar,
+                vasarolt_sol,
+                kezdi_osszeg,
+                "Kézi vételi gomb (APP)"
             )
 
     elif veteli_jel and not van_pozicio:
@@ -503,11 +525,12 @@ def futtatas():
             dontes = "VÉTEL"
             dontes_reszlet = f"Új pozíció nyitva ~{veteli_ar:.2f} {JEGYZESI_COIN} áron ({belepes_ok})."
 
-            telegram_uzenet(
-                f"🟦 VÉTEL | {PIONEX_SZIMBOLUM} megnyitva\n"
-                f"Belépési ár: ~{veteli_ar:.2f} {JEGYZESI_COIN}\n"
-                f"Mennyiség: {veteli_meret:.6f} {ALAP_COIN} (~{pozicio_ertek_usd:.2f} {JEGYZESI_COIN})\n"
-                f"Jelzés: {belepes_ok} | ADX={adx:.1f}, RSI={rsi:.1f}"
+            veteli_telegram_ertesites(
+                False,
+                veteli_ar,
+                veteli_meret,
+                pozicio_ertek_usd,
+                f"{belepes_ok} | ADX={adx:.1f}, RSI={rsi:.1f}"
             )
 
     elif van_pozicio:
@@ -601,14 +624,7 @@ def futtatas():
                 dontes = "ELADÁS"
                 dontes_reszlet = f"{ok} | Eredmény: {profit_pct:+.2f}% ({profit_usdt:+.2f} {JEGYZESI_COIN})"
 
-                cimke = "🟢 NYERESÉG" if profit_usdt >= 0 else "🔴 VESZTESÉG"
-                telegram_uzenet(
-                    f"{cimke} | {PIONEX_SZIMBOLUM} lezárva\n"
-                    f"Ok: {ok}\n"
-                    f"Eredmény: {profit_pct:+.2f}% ({profit_usdt:+.2f} {JEGYZESI_COIN})\n"
-                    f"Eladási ár: {ar:.2f} {JEGYZESI_COIN}\n"
-                    f"Új szabad egyenleg: {uj_usdt:.2f} {JEGYZESI_COIN}"
-                )
+                eladasi_telegram_ertesites(ok, bazis_ar, ar, profit_pct, profit_usdt, uj_usdt)
         else:
             dontes = "TARTÁS"
             if trailing_aktiv and korai_vedelem_aktiv:
@@ -669,17 +685,6 @@ def futtatas():
     print("Dashboard status.json sikeresen elmentve.")
 
     profit_gorbe_mentese(szabad_usdt + pozicio_ertek_usd, ar, dontes)
-
-    if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch" and not kenyszertett_eladas and not kenyszertett_vetel:
-        allapot = f"Nyitott pozíció (~{pozicio_ertek_usd:.2f} USD)" if van_pozicio else "Nincs nyitott pozíció"
-        print("Telegram tesztüzenet küldése...")
-        telegram_uzenet(
-            f"🤖 Telegram teszt OK!\n"
-            f"{PIONEX_SZIMBOLUM} ár: {ar:.2f} {JEGYZESI_COIN}\n"
-            f"Állapot: {allapot}\n"
-            f"Szabad egyenleg: {szabad_usdt:.2f} {JEGYZESI_COIN}"
-        )
-
     return dontes
 
 
