@@ -1,18 +1,18 @@
 {
-  "updated_at": "2026-11-25T06:49:24.279313+00:00",
+  "updated_at": "2026-11-25T08:24:56.433524+00:00",
   "symbol": "SOL_USDT",
   "base_coin": "SOL",
   "quote_coin": "USDT",
-  "price": 68.75,
-  "ma10": 69.13,
-  "ma30": 69.98,
-  "adx": 27.9,
-  "rsi": 38.7,
+  "price": 67.86,
+  "ma10": 68.76,
+  "ma30": 69.75,
+  "adx": 28.8,
+  "rsi": 33.3,
   "free_usdt": 0.5461,
   "free_crypto": 0.750198,
   "next_bet_usdt": 0.54,
-  "position_usd": 51.58,
-  "total_usd": 52.12,
+  "position_usd": 50.91,
+  "total_usd": 51.45,
   "has_position": true,
   "entry_price": 71.53,
   "entry_time": "2026-11-24T05:00:46.291000+00:00",
@@ -22,10 +22,10 @@
   "trailing_active": false,
   "stop_loss_price": 67.24,
   "stop_loss_pct": 6.0,
-  "profit_pct": -3.89,
-  "profit_usdt": -2.09,
+  "profit_pct": -5.13,
+  "profit_usdt": -2.75,
   "status": "TARTÁS",
-  "status_detail": "0.75 SOL (~51.58 USD) | Eredmény: -3.89% | SL: $67.24",
+  "status_detail": "0.75 SOL (~50.91 USD) | Eredmény: -5.13% | SL: $67.24",
   "adx_min": 15,
   "rsi_max": 72,
   "manual_buys": [],
@@ -165,12 +165,5 @@
       "cost_usdt": 0.72,
       "time": "2026-11-24T04:57:00.813000+00:00"
     }
-  ],
-  "nvda": {
-    "updated_at": "2026-11-25T07:18:25.491358+00:00",
-    "mode": "paper",
-    "market_open": false,
-    "action": "market_closed",
-    "message": "A piac jelenleg zárva van."
-  }
+  ]
 }
