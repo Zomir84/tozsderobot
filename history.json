@@ -394,5 +394,11 @@
     "total_usd": 51.36,
     "price": 66.73,
     "status": "VÁRAKOZÁS"
+  },
+  {
+    "time": "2026-11-25T15:35:52.103780+00:00",
+    "total_usd": 51.36,
+    "price": 67.24,
+    "status": "VÁRAKOZÁS"
   }
 ]
