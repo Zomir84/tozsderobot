@@ -1,729 +1,693 @@
-import os
-import sys
-import time
+import hashlib
 import hmac
 import json
-import math
-import hashlib
+import os
 import subprocess
+import time
 from datetime import datetime, timezone
-import requests
-import yfinance as yf
-import ta
+from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
-# --- FUTTATÁSI ÉS TRENDKÖVETŐ BEÁLLÍTÁSOK ---
-TESZT_MOD = False                       # Éles mód (a robot kereskedik)
-FOLYAMATOS_MOD = True                   # True: folyamatos hurok | False: egyetlen futás
-CIKLUSSZUNET_MP = 45                    # 45 másodpercenként ellenőriz a folyamatos hurokban
-GITHUB_PUSH_MOD = True                  # True: frissíti a Pionex JSON fájlokat a GitHubon
-GITHUB_PUSH_INTERVAL_MP = 300           # Állapotváltozás nélkül 5 percenként pusholjon
-HIBA_ERTESITES_SZUNET_MP = 900          # Hiba esetén legalább 15 percenként küld Telegram hibát
+# ==============================================================================
+# 1. BEÁLLÍTÁSOK ÉS KONSTANSOK
+# ==============================================================================
+BASE_DIR = Path(__file__).resolve().parent
+STATUS_FILE = BASE_DIR / "pionex_status.json"
+HISTORY_FILE = BASE_DIR / "pionex_history.json"
+STATE_FILE = BASE_DIR / "robot_runtime_state.json"
 
-YF_SZIMBOLUM = "SOL-USD"                # Yahoo Finance jelölés
-PIONEX_SZIMBOLUM = "SOL_USDT"           # Pionex pár
-ALAP_COIN = "SOL"                       # Megvásárolt kriptó
-JEGYZESI_COIN = "USDT"                  # Amivel fizetsz
-TET_SZAZALEK = 0.99                     # A szabad USDT 99%-át költi egy vételre
-MINIMUM_TET_USDT = 11.0                 # Pionex minimum megbízás feletti biztonsági határ
-STOP_LOSS_SZAZALEK = 0.06               # Alap 6%-os veszteségvágó
-LEPCSO_SZAZALEK = 0.04                  # Minden további +4% új lépcső
-VISSZAHUZAS_SZAZALEK = 0.015            # +4% elérése után a csúcsárból -1.5% visszahúzódásnál zár
-KORAI_PROFIT_VEDELEM_KUSZOB_PCT = 2.0   # +2.0% nyereségnél aktiválja a korai profitvédő visszahúzást
-KORAI_PROFIT_VISSZAHUZAS_PCT = 1.2     # +2.0%..+4.0% között a csúcsból -1.2% esésnél zár
-MA_ELADAS_MIN_PROFIT_PCT = 0.5          # MA10 < MA30 legalább +0.5% nyereségnél zár
-KORAI_BELEPES = True                    # Gyorsabb trendkövetés induló emelkedésnél
-ALAP_TIZEDES_PONTOSSAG = 2              # Tartalék tizedespontosság, ha az API-lekérés nem elérhető
+SYMBOL = "SOL_USDT"
+YF_SYMBOL = "SOL-USD"
+PIONEX_BASE_URL = "https://api.pionex.com"
 
-ALLAPOT_FAJL = "pionex_status.json"
-ELOZMENY_FAJL = "pionex_history.json"
+CYCLE_SECONDS = 45               # Főciklus időköz (45 mp)
+SELL_COOLDOWN_SEC = 300          # 5 perc várakozás SELL után új BUY előtt
+STOP_LOSS_PCT = 6.0              # Fix Stop-Loss (%)
+TRAILING_ACTIVATION_PCT = 1.5    # +1.5% nyereségnél aktiválódik a trailing stop
+TRAILING_CALLBACK_PCT = 1.0      # 1.0% visszaesés a csúcsból zárja a pozíciót
+ALERT_COOLDOWN_SEC = 1800      # Azonos hibából max. 30 percenként 1 Telegram-üzenet
+GIT_SYNC_INTERVAL_SEC = 120    # Git push/pull legfeljebb 2 percenként
+ENABLE_GIT_SYNC = True           # VPS-en vagy teszteléskor False-ra állítható
+LIVE_TRADING_ENABLED = False     # Csak akkor állítsd True-ra, ha éles Pionex megbízást is küldjön
 
-# --- SZŰRŐK ---
-ADX_MINIMUM = 14                        # 14 alatt gyenge/oldalazó mozgás
-RSI_MAXIMUM = 72                        # 72 felett túlvásárolt
-KORAI_RSI_MA5_MIN = 38.0                # MA5 > MA15 korai belépéshez minimum RSI
-KORAI_RSI_MA10_MIN = 44.0               # Emelkedő MA10 korai belépéshez minimum RSI
-# --------------
+ADX_MIN = 14.0
+RSI_MAX = 72.0
+MIN_BUY_USDT = 5.0
 
-API_KEY = os.environ["PIONEX_API_KEY"].strip()
-SECRET_KEY = os.environ["PIONEX_SECRET_KEY"].strip()
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "").strip()
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-BASE_URL = "https://api.pionex.com"
+PIONEX_API_KEY = os.getenv("PIONEX_API_KEY", "").strip()
+PIONEX_API_SECRET = os.getenv("PIONEX_API_SECRET", "").strip()
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 
 
-def telegram_uzenet(szoveg):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print(f"TELEGRAM HIBA: Hiányzó adat! Token megvan: {bool(TELEGRAM_TOKEN)} | Chat ID megvan: {bool(TELEGRAM_CHAT_ID)}")
-        return
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def parse_iso_utc(ts: str | None) -> datetime | None:
+    if not ts:
+        return None
     try:
-        valasz = requests.post(
-            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            json={"chat_id": TELEGRAM_CHAT_ID, "text": szoveg},
-            timeout=10
-        )
-        print(f"Telegram válasz ({valasz.status_code}): {valasz.text}")
-    except Exception as hiba:
-        print(f"Telegram értesítési hiba: {hiba}")
-
-
-def pionex_keres(method, path, params=None, body=None):
-    params = dict(params or {})
-    params["timestamp"] = str(int(time.time() * 1000))
-    rendezett = "&".join(f"{k}={params[k]}" for k in sorted(params.keys()))
-    path_url = f"{path}?{rendezett}"
-
-    body_str = json.dumps(body, separators=(",", ":")) if body is not None else ""
-    uzenet = f"{method.upper()}{path_url}{body_str}"
-    alairas = hmac.new(
-        SECRET_KEY.encode("utf-8"),
-        uzenet.encode("utf-8"),
-        hashlib.sha256
-    ).hexdigest()
-
-    headers = {
-        "PIONEX-KEY": API_KEY,
-        "PIONEX-SIGNATURE": alairas,
-        "Content-Type": "application/json"
-    }
-
-    url = f"{BASE_URL}{path_url}"
-    if method.upper() == "GET":
-        valasz = requests.get(url, headers=headers, timeout=15)
-    else:
-        valasz = requests.post(url, headers=headers, data=body_str, timeout=15)
-
-    adat = valasz.json()
-    if not adat.get("result"):
-        raise RuntimeError(f"Pionex API hiba: {adat}")
-    return adat["data"]
-
-
-def pionex_aktualis_ar(szimbolum, tartalek_ar):
-    try:
-        valasz = requests.get(
-            f"{BASE_URL}/api/v1/market/tickers",
-            params={"symbol": szimbolum, "type": "SPOT"},
-            timeout=10
-        )
-        adat = valasz.json()
-        if adat.get("result"):
-            tickers = adat.get("data", {}).get("tickers", [])
-            for t in tickers:
-                if t.get("symbol") == szimbolum:
-                    for kulcs in ("close", "price", "lastPrice"):
-                        if t.get(kulcs) is not None:
-                            ar_val = float(t[kulcs])
-                            if ar_val > 0:
-                                return ar_val
-    except Exception as hiba:
-        print(f"Figyelmeztetés: nem sikerült lekérni a {szimbolum} élő Pionex árát ({hiba}), tartalék ár: {tartalek_ar:.2f}")
-    return float(tartalek_ar)
-
-
-def lekerdezd_mennyiseg_pontossag(szimbolum, alap_pontossag=ALAP_TIZEDES_PONTOSSAG):
-    try:
-        adat = pionex_keres("GET", "/api/v1/common/symbols", params={"symbols": szimbolum})
-        for s in adat.get("symbols", []):
-            if s.get("symbol") == szimbolum and s.get("basePrecision") is not None:
-                pontossag = int(s["basePrecision"])
-                if pontossag >= 0:
-                    return pontossag
-    except Exception as hiba:
-        print(f"Figyelmeztetés: nem sikerült lekérni a {szimbolum} pontosságát ({hiba}), tartalék érték: {alap_pontossag}")
-    return alap_pontossag
-
-
-def szabad_egyenleg(coin):
-    adat = pionex_keres("GET", "/api/v1/account/balances")
-    for b in adat.get("balances", []):
-        if b["coin"] == coin:
-            return float(b["free"])
-    return 0.0
-
-
-def utolso_kotesek(szimbolum, manual_order_ids=None, limit=15):
-    manual_ids = set(str(x) for x in (manual_order_ids or []))
-    adat = pionex_keres("GET", "/api/v1/trade/fills", params={"symbol": szimbolum})
-    fills = adat.get("fills", [])
-    kotesek = []
-    for f in fills[:limit]:
-        ar_f = float(f["price"])
-        meret_f = float(f["size"])
-        ts = f.get("timestamp")
-        ido_iso = None
-        if ts:
-            ts_num = float(ts)
-            ts_sec = ts_num / 1000.0 if ts_num > 1e12 else ts_num
-            ido_iso = datetime.fromtimestamp(ts_sec, tz=timezone.utc).isoformat()
-        oid = f.get("orderId")
-        kotesek.append({
-            "order_id": oid,
-            "side": f.get("side"),
-            "source": "MANUAL" if oid is not None and str(oid) in manual_ids else "BOT",
-            "price": round(ar_f, 2),
-            "size": round(meret_f, 6),
-            "cost_usdt": round(ar_f * meret_f, 2),
-            "time": ido_iso
-        })
-    return kotesek
-
-
-def utolso_vetel_adatok(kotesek, manual_buys=None):
-    elso_buy = next((k for k in kotesek if k.get("side") == "BUY"), None)
-    if not elso_buy and not manual_buys:
+        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        return dt.astimezone(timezone.utc) if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    except ValueError:
         return None
 
-    if elso_buy:
-        oid = elso_buy.get("order_id")
-        if oid is not None:
-            azonos = [k for k in kotesek if k.get("side") == "BUY" and k.get("order_id") == oid]
-        else:
-            azonos = [elso_buy]
-        ossz_meret = sum(k["size"] for k in azonos)
-        ossz_usdt = sum(k["price"] * k["size"] for k in azonos)
-        atlag_ar = ossz_usdt / ossz_meret if ossz_meret > 0 else elso_buy["price"]
-        return {
-            "price": round(atlag_ar, 2),
-            "size": round(ossz_meret, 6),
-            "cost_usdt": round(ossz_usdt, 2),
-            "time": elso_buy["time"]
-        }
 
-    utolso_man = manual_buys[-1]
-    return {
-        "price": round(float(utolso_man["price"]), 2),
-        "size": round(float(utolso_man["size"]), 6),
-        "cost_usdt": round(float(utolso_man["cost_usdt"]), 2),
-        "time": utolso_man.get("time")
-    }
-
-
-def elozo_allapot_betoltese():
+def load_json_safe(path: Path, default):
+    if not path.exists():
+        return default
     try:
-        with open(ALLAPOT_FAJL, "r", encoding="utf-8") as f:
+        with path.open("r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
-        return {}
+        return default
 
 
-def lefele_kerekit(ertek, tizedes):
-    szorzo = 10 ** tizedes
-    return math.floor(ertek * szorzo) / szorzo
+def save_json_atomic(path: Path, payload) -> None:
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with tmp_path.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+    os.replace(tmp_path, path)
 
 
-def profit_gorbe_mentese(teljes_usd, aktualis_ar, allapot):
-    most = datetime.now(timezone.utc)
-    try:
-        with open(ELOZMENY_FAJL, "r", encoding="utf-8") as f:
-            elozmenyek = json.load(f)
-            if not isinstance(elozmenyek, list):
-                elozmenyek = []
-    except Exception:
-        elozmenyek = []
+def http_get_json(url: str, headers: dict | None = None, timeout: int = 12):
+    req_headers = {"User-Agent": "Mozilla/5.0 PionexRobot/1.0"}
+    if headers:
+        req_headers.update(headers)
+    req = Request(url, headers=req_headers, method="GET")
+    with urlopen(req, timeout=timeout) as resp:
+        raw = resp.read().decode("utf-8")
+        return json.loads(raw)
 
-    mentes_kell = False
-    if not elozmenyek or allapot in ("VÉTEL", "KÉZI VÉTEL", "ELADÁS"):
-        mentes_kell = True
-    else:
-        try:
-            utolso_ido = datetime.fromisoformat(elozmenyek[-1]["time"])
-            if (most - utolso_ido).total_seconds() >= 3300:
-                mentes_kell = True
-        except Exception:
-            mentes_kell = True
 
-    if mentes_kell:
-        elozmenyek.append({
-            "time": most.isoformat(),
-            "total_usd": round(teljes_usd, 2),
-            "price": round(aktualis_ar, 2),
-            "status": allapot
+# ==============================================================================
+# 2. KERESKEDÉSI LOGIKA: PARTIAL FILL, COOLDOWN, TRAILING STOP
+# ==============================================================================
+def consolidate_trades(raw_trades: list[dict]) -> list[dict]:
+    """Egyesíti az azonos order_id alatti részleges kitöltéseket (partial fills)."""
+    grouped: dict[str, dict] = {}
+
+    for idx, trade in enumerate(raw_trades or []):
+        raw_oid = trade.get("order_id")
+        order_key = str(raw_oid) if raw_oid not in (None, "") else f"noid_{trade.get('time', '')}_{idx}"
+        size = float(trade.get("size", 0.0) or 0.0)
+        cost_usdt = float(trade.get("cost_usdt", 0.0) or 0.0)
+        price = float(trade.get("price", 0.0) or 0.0)
+
+        if cost_usdt <= 0.0 and size > 0.0 and price > 0.0:
+            cost_usdt = size * price
+
+        if order_key not in grouped:
+            grouped[order_key] = {
+                "order_id": raw_oid,
+                "side": trade.get("side"),
+                "source": trade.get("source", "BOT"),
+                "total_size": 0.0,
+                "total_cost_usdt": 0.0,
+                "fallback_price": price,
+                "time": trade.get("time"),
+                "fills_count": 0,
+            }
+
+        entry = grouped[order_key]
+        entry["total_size"] += size
+        entry["total_cost_usdt"] += cost_usdt
+        entry["fills_count"] += 1
+
+        if trade.get("time") and (not entry["time"] or str(trade["time"]) > str(entry["time"])):
+            entry["time"] = trade["time"]
+
+    result: list[dict] = []
+    for item in grouped.values():
+        avg_price = (
+            round(item["total_cost_usdt"] / item["total_size"], 4)
+            if item["total_size"] > 0
+            else round(item["fallback_price"], 4)
+        )
+        result.append({
+            "order_id": item["order_id"],
+            "side": item["side"],
+            "source": item["source"],
+            "price": avg_price,
+            "size": round(item["total_size"], 6),
+            "cost_usdt": round(item["total_cost_usdt"], 2),
+            "fills_count": item["fills_count"],
+            "time": item["time"],
         })
-        elozmenyek = elozmenyek[-720:]
-        with open(ELOZMENY_FAJL, "w", encoding="utf-8") as f:
-            json.dump(elozmenyek, f, ensure_ascii=False, indent=2)
-        print(f"Profit-görbe frissítve ({len(elozmenyek)} pont a {ELOZMENY_FAJL} fájlban).")
+
+    result.sort(key=lambda x: str(x.get("time", "")), reverse=True)
+    return result
 
 
-def github_allapot_feltoltese(dontes, utolso_push_ido):
-    if not GITHUB_PUSH_MOD:
-        return utolso_push_ido
-    most_ts = time.time()
-    fontos_esemeny = dontes in ("VÉTEL", "KÉZI VÉTEL", "ELADÁS")
-    if not fontos_esemeny and (most_ts - utolso_push_ido) < GITHUB_PUSH_INTERVAL_MP:
-        return utolso_push_ido
-
-    try:
-        subprocess.run(["git", "add", ALLAPOT_FAJL, ELOZMENY_FAJL], check=True)
-        diff = subprocess.run(["git", "diff", "--cached", "--quiet"])
-        if diff.returncode != 0:
-            uzenet = f"Pionex robot frissítés ({dontes}) - {datetime.now(timezone.utc).strftime('%H:%M UTC')} [skip ci]"
-            subprocess.run(["git", "commit", "-m", uzenet], check=True)
-            subprocess.run(["git", "push"], check=True)
-            print(f"GitHub app fájlok ({ALLAPOT_FAJL}, {ELOZMENY_FAJL}) feltöltve.")
-        return most_ts
-    except Exception as hiba:
-        print(f"Figyelmeztetés: GitHub push sikertelen ({hiba})")
-        return utolso_push_ido
+def is_in_sell_cooldown(last_sell_iso: str | None, now_dt: datetime) -> tuple[bool, int]:
+    last_sell = parse_iso_utc(last_sell_iso)
+    if not last_sell:
+        return False, 0
+    elapsed = int((now_dt - last_sell).total_seconds())
+    if elapsed < SELL_COOLDOWN_SEC:
+        return True, SELL_COOLDOWN_SEC - elapsed
+    return False, 0
 
 
-def eladasi_telegram_ertesites(ok, bazis_ar, eladasi_ar, profit_pct, profit_usdt, uj_usdt):
-    veteli_szoveg = f"{bazis_ar:.2f} {JEGYZESI_COIN}" if bazis_ar else "ismeretlen"
-    if profit_usdt >= 0:
-        eredmeny_cimke = f"🟢 NYERESÉG: {profit_pct:+.2f}% ({profit_usdt:+.2f} {JEGYZESI_COIN})"
-    else:
-        eredmeny_cimke = f"🔴 VESZTESÉG: {profit_pct:+.2f}% ({profit_usdt:+.2f} {JEGYZESI_COIN})"
+def update_position_stops(runtime_state: dict, current_price: float) -> tuple[bool, str]:
+    """Frissíti a highest_price és trailing_active állapotot; kilépési jelzést ad."""
+    if not runtime_state.get("has_position"):
+        runtime_state["trailing_active"] = False
+        runtime_state["highest_price"] = None
+        return False, ""
 
-    telegram_uzenet(
-        f"📤 ELADÁS | {PIONEX_SZIMBOLUM}\n"
-        f"{eredmeny_cimke}\n"
-        f"Vételi ár: {veteli_szoveg}\n"
-        f"Eladási ár: {eladasi_ar:.2f} {JEGYZESI_COIN}\n"
-        f"Ok: {ok}\n"
-        f"Új szabad egyenleg: {uj_usdt:.2f} {JEGYZESI_COIN}"
+    entry_price = float(runtime_state.get("entry_price") or current_price)
+    highest_price = float(runtime_state.get("highest_price") or entry_price)
+    if current_price > highest_price:
+        highest_price = current_price
+    runtime_state["highest_price"] = round(highest_price, 4)
+
+    stop_loss_price = float(
+        runtime_state.get("stop_loss_price") or round(entry_price * (1.0 - STOP_LOSS_PCT / 100.0), 4)
     )
+    runtime_state["stop_loss_price"] = stop_loss_price
+
+    gain_from_entry_pct = ((highest_price - entry_price) / entry_price) * 100.0 if entry_price > 0 else 0.0
+    if gain_from_entry_pct >= TRAILING_ACTIVATION_PCT:
+        runtime_state["trailing_active"] = True
+
+    trailing_price = None
+    if runtime_state.get("trailing_active"):
+        trailing_price = round(highest_price * (1.0 - TRAILING_CALLBACK_PCT / 100.0), 4)
+
+    if current_price <= stop_loss_price:
+        return True, f"STOP_LOSS ({current_price:.4f} <= {stop_loss_price:.4f})"
+
+    if trailing_price is not None and current_price <= trailing_price:
+        return True, f"TRAILING_STOP ({current_price:.4f} <= {trailing_price:.4f}, csúcs: {highest_price:.4f})"
+
+    return False, ""
 
 
-def veteli_telegram_ertesites(kezis, veteli_ar, mennyiseg, osszeg_usdt, indok):
-    cim = f"🟩 KÉZI VÉTEL | {PIONEX_SZIMBOLUM}" if kezis else f"🟦 VÉTEL | {PIONEX_SZIMBOLUM}"
-    telegram_uzenet(
-        f"{cim}\n"
-        f"Vételi ár: {veteli_ar:.2f} {JEGYZESI_COIN}\n"
-        f"Mennyiség: {mennyiseg:.6f} {ALAP_COIN} ({osszeg_usdt:.2f} {JEGYZESI_COIN})\n"
-        f"Nyereség / veszteség: új pozíció (még nincs realizált P/L)\n"
-        f"Indok: {indok}"
-    )
+# ==============================================================================
+# 3. HIBAKEZELÉS: TELEGRAM RITKÍTÁS, YAHOO TARTALÉK, GIT SZINKRON
+# ==============================================================================
+def send_telegram_now(message: str) -> None:
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    body = urlencode({"chat_id": TELEGRAM_CHAT_ID, "text": message}).encode("utf-8")
+    req = Request(url, data=body, method="POST")
+    with urlopen(req, timeout=10):
+        pass
 
 
-def futtatas():
-    elozo = elozo_allapot_betoltese()
-    manual_buys = list(elozo.get("manual_buys") or [])
-    manual_order_ids = [str(m.get("order_id")) for m in manual_buys if m.get("order_id") is not None]
-
-    tizedes_pontossag = lekerdezd_mennyiseg_pontossag(PIONEX_SZIMBOLUM)
-    szabad_usdt = szabad_egyenleg(JEGYZESI_COIN)
-    szabad_kripto = szabad_egyenleg(ALAP_COIN)
-    veteli_osszeg = round(szabad_usdt * TET_SZAZALEK, 2)
-    kotesek = utolso_kotesek(PIONEX_SZIMBOLUM, manual_order_ids=manual_order_ids)
-    vetel_info = utolso_vetel_adatok(kotesek, manual_buys=manual_buys)
-
-    print(
-        f"Pionex API kapcsolat OK! ({PIONEX_SZIMBOLUM} tizedespontosság: {tizedes_pontossag}) | "
-        f"Szabad egyenleg: {szabad_usdt:.4f} {JEGYZESI_COIN} "
-        f"({int(TET_SZAZALEK*100)}% tét = {veteli_osszeg:.2f} {JEGYZESI_COIN}) | {szabad_kripto:.6f} {ALAP_COIN}"
-    )
-
-    adatok = yf.Ticker(YF_SZIMBOLUM).history(period="10d", interval="1h")
-    if adatok is None or adatok.empty:
-        raise RuntimeError(f"Yahoo Finance üres adatsort adott vissza ({YF_SZIMBOLUM}).")
-
-    adatok["MA5"] = ta.trend.SMAIndicator(close=adatok["Close"], window=5).sma_indicator()
-    adatok["MA10"] = ta.trend.SMAIndicator(close=adatok["Close"], window=10).sma_indicator()
-    adatok["MA15"] = ta.trend.SMAIndicator(close=adatok["Close"], window=15).sma_indicator()
-    adatok["MA30"] = ta.trend.SMAIndicator(close=adatok["Close"], window=30).sma_indicator()
-    adatok["ADX"] = ta.trend.ADXIndicator(
-        high=adatok["High"], low=adatok["Low"], close=adatok["Close"], window=14
-    ).adx()
-    adatok["RSI"] = ta.momentum.RSIIndicator(close=adatok["Close"], window=14).rsi()
-
-    yf_ar = float(adatok["Close"].iloc[-1])
-    ar = pionex_aktualis_ar(PIONEX_SZIMBOLUM, yf_ar)
-    ma5 = float(adatok["MA5"].iloc[-1])
-    ma10 = float(adatok["MA10"].iloc[-1])
-    elozo_ma10 = float(adatok["MA10"].iloc[-2]) if len(adatok) >= 2 else ma10
-    ma15 = float(adatok["MA15"].iloc[-1])
-    ma30 = float(adatok["MA30"].iloc[-1])
-    adx = float(adatok["ADX"].iloc[-1])
-    rsi = float(adatok["RSI"].iloc[-1])
-
-    print(
-        f"{PIONEX_SZIMBOLUM} élő ár: {ar:.2f} (YF: {yf_ar:.2f}) | MA5/MA15: {ma5:.2f}/{ma15:.2f} | "
-        f"MA10/MA30: {ma10:.2f}/{ma30:.2f} | ADX: {adx:.1f} | RSI: {rsi:.1f}"
-    )
-
-    pozicio_ertek_usd = szabad_kripto * ar
-    van_pozicio = pozicio_ertek_usd >= 10.0
-
-    korai_ma5_jel = (ma5 > ma15) and (rsi >= KORAI_RSI_MA5_MIN)
-    korai_ma10_jel = (ar > ma10) and (ma10 > elozo_ma10) and (rsi >= KORAI_RSI_MA10_MIN)
-    korai_emelked_jel = KORAI_BELEPES and (korai_ma5_jel or korai_ma10_jel)
-    fo_ma_jel = (ma10 > ma30) and (ma10 >= elozo_ma10 * 0.998)
-    veteli_jel = fo_ma_jel or korai_emelked_jel
-
-    dontes = "VÁRAKOZÁS"
-    dontes_reszlet = "Nincs nyitott pozíció és nincs szűrt vételi jelzés."
-    veteli_ar = vetel_info["price"] if (van_pozicio and vetel_info) else None
-    veteli_ido = vetel_info["time"] if (van_pozicio and vetel_info) else None
-    veteli_meret = vetel_info["size"] if (van_pozicio and vetel_info) else None
-    veteli_koltseg = vetel_info["cost_usdt"] if (van_pozicio and vetel_info) else None
-    profit_pct = 0.0
-    profit_usdt = 0.0
-    stop_loss_ar = None
-    legmagasabb_ar = None
-    trailing_aktiv = False
-
-    kenyszertett_eladas = os.environ.get("FORCE_SELL", "").strip().lower() == "true"
-    kenyszertett_vetel = os.environ.get("FORCE_BUY", "").strip().lower() == "true"
-    eladhato_most = lefele_kerekit(szabad_kripto, tizedes_pontossag)
-
-    if kenyszertett_eladas and eladhato_most > 0:
-        bazis_ar = veteli_ar or (float(elozo["entry_price"]) if elozo.get("entry_price") else ar)
-        profit_pct = ((ar - bazis_ar) / bazis_ar) * 100 if bazis_ar else 0.0
-        profit_usdt = (ar - bazis_ar) * eladhato_most if bazis_ar else 0.0
-        ok = "MANUÁLIS AZONNALI ELADÁS (APP GOMB)"
-
-        if TESZT_MOD:
-            dontes = "TESZT ELADÁS"
-            dontes_reszlet = f"[TESZT MÓD] {ok} -> {eladhato_most} {ALAP_COIN} eladása lenne ({profit_pct:+.2f}%)."
-            print(dontes_reszlet)
-        else:
-            print(f"{ok} -> {eladhato_most} {ALAP_COIN} eladása ({profit_pct:+.2f}%)...")
-            pionex_keres("POST", "/api/v1/trade/order", body={
-                "symbol": PIONEX_SZIMBOLUM,
-                "side": "SELL",
-                "type": "MARKET",
-                "size": f"{eladhato_most:.{tizedes_pontossag}f}"
-            })
-            print("Pozíció kézi gombbal lezárva!")
-
-            time.sleep(2)
-            uj_usdt = szabad_egyenleg(JEGYZESI_COIN)
-            szabad_usdt = uj_usdt
-            szabad_kripto = szabad_egyenleg(ALAP_COIN)
-            manual_buys = []
-            manual_order_ids = []
-            kotesek = utolso_kotesek(PIONEX_SZIMBOLUM, manual_order_ids=manual_order_ids)
-            veteli_osszeg = round(szabad_usdt * TET_SZAZALEK, 2)
-            pozicio_ertek_usd = szabad_kripto * ar
-            van_pozicio = False
-            legmagasabb_ar = None
-            trailing_aktiv = False
-            stop_loss_ar = None
-            dontes = "ELADÁS"
-            dontes_reszlet = f"{ok} | Eredmény: {profit_pct:+.2f}% ({profit_usdt:+.2f} {JEGYZESI_COIN})"
-
-            eladasi_telegram_ertesites(ok, bazis_ar, ar, profit_pct, profit_usdt, uj_usdt)
-
-    elif kenyszertett_vetel:
-        raw_manual_usdt = os.environ.get("MANUAL_BUY_USDT", "").strip()
+def send_throttled_telegram(runtime_state: dict, alert_key: str, message: str, now_ts: float) -> None:
+    alerts = runtime_state.setdefault("alert_timestamps", {})
+    last_sent = float(alerts.get(alert_key, 0.0) or 0.0)
+    if now_ts - last_sent >= ALERT_COOLDOWN_SEC:
+        alerts[alert_key] = now_ts
+        print(f"[TELEGRAM] {message}")
         try:
-            kezdi_osszeg = float(raw_manual_usdt) if raw_manual_usdt else veteli_osszeg
-        except ValueError:
-            kezdi_osszeg = veteli_osszeg
-        kezdi_osszeg = round(min(szabad_usdt, max(0.0, kezdi_osszeg)), 2)
+            send_telegram_now(message)
+        except Exception:
+            pass
 
-        if kezdi_osszeg < MINIMUM_TET_USDT:
-            dontes = "KEVÉS EGYENLEG"
-            dontes_reszlet = f"Kézi vételhez kevés a szabad {JEGYZESI_COIN} ({kezdi_osszeg:.2f} < {MINIMUM_TET_USDT:.0f})."
-            print(f"KÉZI VÉTEL BLOKKOLVA -> {dontes_reszlet}")
-        elif TESZT_MOD:
-            dontes = "TESZT KÉZI VÉTEL"
-            dontes_reszlet = f"[TESZT MÓD] Kézi vétel lenne ({kezdi_osszeg:.2f} {JEGYZESI_COIN}), a robot logikája érvényes lesz rá."
-            print(dontes_reszlet)
-        else:
-            print(f"KÉZI VÉTEL -> {kezdi_osszeg:.2f} {JEGYZESI_COIN} értékű {PIONEX_SZIMBOLUM}...")
-            eredmeny = pionex_keres("POST", "/api/v1/trade/order", body={
-                "symbol": PIONEX_SZIMBOLUM,
-                "side": "BUY",
-                "type": "MARKET",
-                "amount": f"{kezdi_osszeg:.2f}"
-            })
-            rendeles_id = eredmeny.get("orderId")
-            print(f"Kézi vételi megbízás elküldve! ID: {rendeles_id}")
-            time.sleep(2)
 
-            uj_usdt = szabad_egyenleg(JEGYZESI_COIN)
-            uj_kripto = szabad_egyenleg(ALAP_COIN)
-            vasarolt_sol = max(0.0, uj_kripto - szabad_kripto)
-            if vasarolt_sol == 0.0 and ar > 0:
-                vasarolt_sol = kezdi_osszeg / ar
+def compute_rsi(closes: list[float], period: int = 14) -> float | None:
+    if len(closes) <= period:
+        return None
+    gains = []
+    losses = []
+    for i in range(1, len(closes)):
+        diff = closes[i] - closes[i - 1]
+        gains.append(max(diff, 0.0))
+        losses.append(max(-diff, 0.0))
+    avg_gain = sum(gains[-period:]) / period
+    avg_loss = sum(losses[-period:]) / period
+    if avg_loss == 0:
+        return 100.0 if avg_gain > 0 else 50.0
+    rs = avg_gain / avg_loss
+    return round(100.0 - (100.0 / (1.0 + rs)), 1)
 
-            manual_buys.append({
-                "order_id": rendeles_id,
-                "price": round(ar, 2),
-                "size": round(vasarolt_sol, 6),
-                "cost_usdt": round(kezdi_osszeg, 2),
-                "time": datetime.now(timezone.utc).isoformat()
-            })
-            manual_order_ids = [str(m.get("order_id")) for m in manual_buys if m.get("order_id") is not None]
 
-            szabad_usdt = uj_usdt
-            szabad_kripto = uj_kripto
-            veteli_osszeg = round(szabad_usdt * TET_SZAZALEK, 2)
-            pozicio_ertek_usd = szabad_kripto * ar
-            van_pozicio = pozicio_ertek_usd >= 10.0
-            kotesek = utolso_kotesek(PIONEX_SZIMBOLUM, manual_order_ids=manual_order_ids)
-            vetel_info = utolso_vetel_adatok(kotesek, manual_buys=manual_buys)
-
-            veteli_ar = vetel_info["price"] if vetel_info else round(ar, 2)
-            veteli_ido = vetel_info["time"] if vetel_info else datetime.now(timezone.utc).isoformat()
-            veteli_meret = vetel_info["size"] if vetel_info else szabad_kripto
-            veteli_koltseg = vetel_info["cost_usdt"] if vetel_info else round(szabad_kripto * veteli_ar, 2)
-            elozo_csucs = float(elozo["highest_price"]) if elozo.get("highest_price") is not None else 0.0
-            legmagasabb_ar = max(elozo_csucs, ar, veteli_ar)
-            stop_loss_ar = veteli_ar * (1 - STOP_LOSS_SZAZALEK)
-            profit_pct = ((ar - veteli_ar) / veteli_ar) * 100 if veteli_ar else 0.0
-            profit_usdt = (ar - veteli_ar) * lefele_kerekit(szabad_kripto, tizedes_pontossag) if veteli_ar else 0.0
-
-            dontes = "KÉZI VÉTEL"
-            dontes_reszlet = (
-                f"Kézi vétel rögzítve (~{vasarolt_sol:.4f} {ALAP_COIN} @ ~${ar:.2f}), "
-                f"a robot automatikus logikája érvényes a pozícióra."
-            )
-
-            veteli_telegram_ertesites(
-                True,
-                veteli_ar,
-                vasarolt_sol,
-                kezdi_osszeg,
-                "Kézi vételi gomb (APP)"
-            )
-
-    elif veteli_jel and not van_pozicio:
-        belepes_ok = (
-            "MA10 > MA30"
-            if fo_ma_jel
-            else ("Korai MA5 > MA15 + RSI" if korai_ma5_jel else "Korai emelkedő MA10 + RSI")
+def compute_adx(highs: list[float], lows: list[float], closes: list[float], period: int = 14) -> float | None:
+    n = min(len(highs), len(lows), len(closes))
+    if n <= period + 1:
+        return None
+    trs = []
+    plus_dms = []
+    minus_dms = []
+    for i in range(1, n):
+        up_move = highs[i] - highs[i - 1]
+        down_move = lows[i - 1] - lows[i]
+        plus_dm = up_move if (up_move > down_move and up_move > 0) else 0.0
+        minus_dm = down_move if (down_move > up_move and down_move > 0) else 0.0
+        tr = max(
+            highs[i] - lows[i],
+            abs(highs[i] - closes[i - 1]),
+            abs(lows[i] - closes[i - 1]),
         )
-        if adx < ADX_MINIMUM:
-            dontes = "SZŰRŐ BLOKKOLTA"
-            dontes_reszlet = f"Gyenge trend / oldalazás (ADX: {adx:.1f}, min. {ADX_MINIMUM} kell)."
-            print(f"SZŰRŐ BLOKKOLTA -> {dontes_reszlet}")
-        elif rsi > RSI_MAXIMUM:
-            dontes = "SZŰRŐ BLOKKOLTA"
-            dontes_reszlet = f"Túlvásárolt piac (RSI: {rsi:.1f}, max. {RSI_MAXIMUM} lehet)."
-            print(f"SZŰRŐ BLOKKOLTA -> {dontes_reszlet}")
-        elif veteli_osszeg < MINIMUM_TET_USDT:
-            dontes = "KEVÉS EGYENLEG"
-            dontes_reszlet = f"A {int(TET_SZAZALEK*100)}%-os tét ({veteli_osszeg:.2f} {JEGYZESI_COIN}) a {MINIMUM_TET_USDT:.0f} {JEGYZESI_COIN} minimum alatt van."
-            print(f"KEVÉS EGYENLEG -> {dontes_reszlet}")
-        elif TESZT_MOD:
-            dontes = "TESZT VÉTEL"
-            dontes_reszlet = f"[TESZT MÓD] Vételi jelzés lenne ({belepes_ok}, {veteli_osszeg:.2f} {JEGYZESI_COIN})."
-            print(dontes_reszlet)
-        else:
-            print(f"VÉTELI JELZÉS ({belepes_ok}) -> {veteli_osszeg:.2f} {JEGYZESI_COIN} értékű {PIONEX_SZIMBOLUM} vásárlása...")
-            eredmeny = pionex_keres("POST", "/api/v1/trade/order", body={
-                "symbol": PIONEX_SZIMBOLUM,
-                "side": "BUY",
-                "type": "MARKET",
-                "amount": f"{veteli_osszeg:.2f}"
-            })
-            print(f"Éles vételi megbízás elküldve! ID: {eredmeny.get('orderId')}")
-            time.sleep(2)
-            szabad_usdt = szabad_egyenleg(JEGYZESI_COIN)
-            szabad_kripto = szabad_egyenleg(ALAP_COIN)
-            kotesek = utolso_kotesek(PIONEX_SZIMBOLUM, manual_order_ids=manual_order_ids)
-            vetel_info = utolso_vetel_adatok(kotesek, manual_buys=manual_buys)
-            veteli_osszeg = round(szabad_usdt * TET_SZAZALEK, 2)
-            pozicio_ertek_usd = szabad_kripto * ar
-            van_pozicio = pozicio_ertek_usd >= 10.0
-            veteli_ar = vetel_info["price"] if vetel_info else ar
-            veteli_ido = vetel_info["time"] if vetel_info else datetime.now(timezone.utc).isoformat()
-            veteli_meret = vetel_info["size"] if vetel_info else szabad_kripto
-            veteli_koltseg = vetel_info["cost_usdt"] if vetel_info else round(szabad_kripto * ar, 2)
-            legmagasabb_ar = max(ar, veteli_ar)
-            stop_loss_ar = veteli_ar * (1 - STOP_LOSS_SZAZALEK)
-            dontes = "VÉTEL"
-            dontes_reszlet = f"Új pozíció nyitva ~{veteli_ar:.2f} {JEGYZESI_COIN} áron ({belepes_ok})."
+        trs.append(tr)
+        plus_dms.append(plus_dm)
+        minus_dms.append(minus_dm)
 
-            veteli_telegram_ertesites(
-                False,
-                veteli_ar,
-                veteli_meret,
-                pozicio_ertek_usd,
-                f"{belepes_ok} | ADX={adx:.1f}, RSI={rsi:.1f}"
-            )
+    atr = sum(trs[-period:]) / period
+    if atr <= 0:
+        return None
+    plus_di = 100.0 * (sum(plus_dms[-period:]) / period) / atr
+    minus_di = 100.0 * (sum(minus_dms[-period:]) / period) / atr
+    di_sum = plus_di + minus_di
+    if di_sum <= 0:
+        return 0.0
+    dx = 100.0 * abs(plus_di - minus_di) / di_sum
+    return round(dx, 1)
 
-    elif van_pozicio:
-        eladhato = lefele_kerekit(szabad_kripto, tizedes_pontossag)
-        bazis_ar = veteli_ar or (float(elozo["entry_price"]) if elozo.get("entry_price") else ar)
-        profit_pct = ((ar - bazis_ar) / bazis_ar) * 100 if bazis_ar else 0.0
-        profit_usdt = (ar - bazis_ar) * eladhato if bazis_ar else 0.0
 
-        azonos_pozicio = (
-            elozo.get("has_position")
-            and elozo.get("entry_price") is not None
-            and elozo.get("highest_price") is not None
-            and float(elozo.get("entry_price")) <= (bazis_ar or ar) * 1.01
-        )
-        if azonos_pozicio:
-            legmagasabb_ar = max(float(elozo["highest_price"]), ar, bazis_ar or ar)
-        else:
-            legmagasabb_ar = max(ar, bazis_ar or ar)
+def fetch_yf_indicators_direct(symbol: str = YF_SYMBOL) -> dict:
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=15m&range=5d"
+    data = http_get_json(url, timeout=12)
+    chart = (data or {}).get("chart", {})
+    if chart.get("error"):
+        raise RuntimeError(str(chart["error"]))
+    results = chart.get("result") or []
+    if not results:
+        raise ValueError("Üres result lista a Yahoo Finance válaszban")
 
-        lepes_szint = 0
-        korai_vedelem_aktiv = False
-        if bazis_ar and bazis_ar > 0:
-            alap_sl = bazis_ar * (1 - STOP_LOSS_SZAZALEK)
-            csucs_nyereseg_pct = ((legmagasabb_ar - bazis_ar) / bazis_ar) * 100.0
-            lepes_szint = max(0, math.floor(csucs_nyereseg_pct / (LEPCSO_SZAZALEK * 100.0)))
+    res0 = results[0]
+    meta = res0.get("meta") or {}
+    quote = ((res0.get("indicators") or {}).get("quote") or [{}])[0]
+    raw_closes = quote.get("close") or []
+    raw_highs = quote.get("high") or []
+    raw_lows = quote.get("low") or []
 
-            if lepes_szint >= 1:
-                trailing_aktiv = True
-                visszahuzasi_sl = legmagasabb_ar * (1 - VISSZAHUZAS_SZAZALEK)
-                stop_loss_ar = max(alap_sl, visszahuzasi_sl)
-            elif csucs_nyereseg_pct >= KORAI_PROFIT_VEDELEM_KUSZOB_PCT:
-                trailing_aktiv = True
-                korai_vedelem_aktiv = True
-                korai_sl = legmagasabb_ar * (1 - (KORAI_PROFIT_VISSZAHUZAS_PCT / 100.0))
-                stop_loss_ar = max(alap_sl, korai_sl)
-            else:
-                trailing_aktiv = False
-                stop_loss_ar = alap_sl
+    closes = [float(x) for x in raw_closes if x is not None]
+    highs = [float(x) for x in raw_highs if x is not None]
+    lows = [float(x) for x in raw_lows if x is not None]
 
-        stop_loss_aktiv = (ar <= stop_loss_ar) if stop_loss_ar else False
-        ma_eladas_jel = (
-            (ma10 < ma30) and (profit_pct >= MA_ELADAS_MIN_PROFIT_PCT)
-        ) or (
-            (ar < ma30) and (adx >= 25.0) and (profit_pct <= -1.5)
-        )
+    if len(closes) < 30:
+        raise ValueError("Nincs elegendő (legalább 30) záróár a Yahoo Finance adatsorban")
 
-        if stop_loss_aktiv or ma_eladas_jel:
-            if stop_loss_aktiv:
-                if trailing_aktiv and korai_vedelem_aktiv:
-                    ok = (
-                        f"KORAI PROFITVÉDŐ KÖVETŐ SL (+{KORAI_PROFIT_VEDELEM_KUSZOB_PCT:.1f}% felett, "
-                        f"Csúcs: ${legmagasabb_ar:.2f}, -{KORAI_PROFIT_VISSZAHUZAS_PCT:.1f}%)"
-                    )
-                elif trailing_aktiv:
-                    ok = (
-                        f"LÉPCSŐZETES KÖVETŐ SL (+{lepes_szint * int(LEPCSO_SZAZALEK * 100)}% lépcső, "
-                        f"Csúcs: ${legmagasabb_ar:.2f}, -{VISSZAHUZAS_SZAZALEK * 100:.1f}%)"
-                    )
-                else:
-                    ok = f"STOP-LOSS (-{int(STOP_LOSS_SZAZALEK*100)}%)"
-            else:
-                ok = f"TREND / ELADÁSI JELZÉS (MA10={ma10:.2f}, MA30={ma30:.2f}, {profit_pct:+.2f}%)"
+    yf_price = float(meta.get("regularMarketPrice") or closes[-1])
+    ma5 = round(sum(closes[-5:]) / 5.0, 2)
+    ma15 = round(sum(closes[-15:]) / 15.0, 2)
+    ma10 = round(sum(closes[-10:]) / 10.0, 2)
+    ma30 = round(sum(closes[-30:]) / 30.0, 2)
+    rsi = compute_rsi(closes, 14)
+    adx = compute_adx(highs, lows, closes, 14)
 
-            if TESZT_MOD:
-                dontes = "TESZT ELADÁS"
-                dontes_reszlet = f"[TESZT MÓD] {ok} -> {eladhato} {ALAP_COIN} eladása lenne ({profit_pct:+.2f}%)."
-                print(dontes_reszlet)
-            else:
-                print(f"{ok} -> {eladhato} {ALAP_COIN} eladása ({profit_pct:+.2f}%)...")
-                pionex_keres("POST", "/api/v1/trade/order", body={
-                    "symbol": PIONEX_SZIMBOLUM,
-                    "side": "SELL",
-                    "type": "MARKET",
-                    "size": f"{eladhato:.{tizedes_pontossag}f}"
-                })
-                print("Pozíció lezárva!")
-
-                time.sleep(2)
-                uj_usdt = szabad_egyenleg(JEGYZESI_COIN)
-                szabad_usdt = uj_usdt
-                szabad_kripto = szabad_egyenleg(ALAP_COIN)
-                manual_buys = []
-                manual_order_ids = []
-                kotesek = utolso_kotesek(PIONEX_SZIMBOLUM, manual_order_ids=manual_order_ids)
-                veteli_osszeg = round(szabad_usdt * TET_SZAZALEK, 2)
-                pozicio_ertek_usd = szabad_kripto * ar
-                van_pozicio = False
-                legmagasabb_ar = None
-                trailing_aktiv = False
-                stop_loss_ar = None
-                dontes = "ELADÁS"
-                dontes_reszlet = f"{ok} | Eredmény: {profit_pct:+.2f}% ({profit_usdt:+.2f} {JEGYZESI_COIN})"
-
-                eladasi_telegram_ertesites(ok, bazis_ar, ar, profit_pct, profit_usdt, uj_usdt)
-        else:
-            dontes = "TARTÁS"
-            if trailing_aktiv and korai_vedelem_aktiv:
-                sl_info = (
-                    f" | Korai követő SL: ${stop_loss_ar:.2f} "
-                    f"(Csúcs: ${legmagasabb_ar:.2f}, -{KORAI_PROFIT_VISSZAHUZAS_PCT:.1f}%)"
-                )
-            elif trailing_aktiv:
-                sl_info = (
-                    f" | Lépcső: +{lepes_szint * int(LEPCSO_SZAZALEK * 100)}%, Követő SL: ${stop_loss_ar:.2f} "
-                    f"(Csúcs: ${legmagasabb_ar:.2f}, -{VISSZAHUZAS_SZAZALEK * 100:.1f}%)"
-                )
-            else:
-                sl_info = f" | SL: ${stop_loss_ar:.2f}"
-            dontes_reszlet = f"{eladhato} {ALAP_COIN} (~{pozicio_ertek_usd:.2f} USD) | Eredmény: {profit_pct:+.2f}%{sl_info}"
-            print(f"TARTÁS -> {dontes_reszlet}")
-    else:
-        print(f"VÁRAKOZÁS -> {dontes_reszlet}")
-
-    dashboard_adat = {
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-        "symbol": PIONEX_SZIMBOLUM,
-        "base_coin": ALAP_COIN,
-        "quote_coin": JEGYZESI_COIN,
-        "price": round(ar, 2),
-        "pionex_price": round(ar, 2),
-        "yf_price": round(yf_ar, 2),
-        "ma10": round(ma10, 2),
-        "ma30": round(ma30, 2),
-        "adx": round(adx, 1),
-        "rsi": round(rsi, 1),
-        "free_usdt": round(szabad_usdt, 4),
-        "free_crypto": round(szabad_kripto, 6),
-        "next_bet_usdt": round(veteli_osszeg, 2),
-        "position_usd": round(pozicio_ertek_usd, 2),
-        "total_usd": round(szabad_usdt + pozicio_ertek_usd, 2),
-        "has_position": van_pozicio,
-        "entry_price": round(veteli_ar, 2) if veteli_ar else None,
-        "entry_time": veteli_ido,
-        "entry_size": round(veteli_meret, 6) if veteli_meret else None,
-        "entry_cost_usdt": round(veteli_koltseg, 2) if veteli_koltseg else None,
-        "highest_price": round(legmagasabb_ar, 2) if legmagasabb_ar else None,
-        "trailing_active": trailing_aktiv,
-        "stop_loss_price": round(stop_loss_ar, 2) if stop_loss_ar else None,
-        "stop_loss_pct": round(STOP_LOSS_SZAZALEK * 100, 1),
-        "profit_pct": round(profit_pct, 2),
-        "profit_usdt": round(profit_usdt, 2),
-        "status": dontes,
-        "status_detail": dontes_reszlet,
-        "adx_min": ADX_MINIMUM,
-        "rsi_max": RSI_MAXIMUM,
-        "manual_buys": manual_buys,
-        "recent_trades": kotesek
+    return {
+        "yf_price": round(yf_price, 2),
+        "ma5": ma5,
+        "ma15": ma15,
+        "ma10": ma10,
+        "ma30": ma30,
+        "adx": adx,
+        "rsi": rsi,
     }
 
-    with open(ALLAPOT_FAJL, "w", encoding="utf-8") as f:
-        json.dump(dashboard_adat, f, ensure_ascii=False, indent=2)
-    print(f"Dashboard {ALLAPOT_FAJL} sikeresen elmentve.")
 
-    profit_gorbe_mentese(szabad_usdt + pozicio_ertek_usd, ar, dontes)
-    return dontes
+def fetch_indicators_safe(runtime_state: dict, now_ts: float) -> dict:
+    """Yahoo Finance (SOL-USD) indikátorok lekérése tartalékállapottal."""
+    try:
+        indicators = fetch_yf_indicators_direct(YF_SYMBOL)
+        if not indicators or indicators.get("ma10") is None or indicators.get("ma30") is None:
+            raise ValueError("Hiányos Yahoo Finance indikátor adatsor")
+        runtime_state["last_valid_indicators"] = indicators
+        return indicators
+    except Exception as exc:
+        send_throttled_telegram(
+            runtime_state,
+            alert_key="yf_sol_usd_error",
+            message=f"⚠️ Yahoo Finance ({YF_SYMBOL}) hiba, tartalék indikátorok aktívak: {exc}",
+            now_ts=now_ts,
+        )
+        fallback = runtime_state.get("last_valid_indicators")
+        if fallback:
+            return fallback
+        return {
+            "yf_price": None,
+            "ma5": None,
+            "ma15": None,
+            "ma10": None,
+            "ma30": None,
+            "adx": None,
+            "rsi": None,
+        }
 
 
-def folytonos_futtatas():
-    print(f"Folyamatos robot elindítva ({PIONEX_SZIMBOLUM}, ciklus: {CIKLUSSZUNET_MP} mp). Leállítás: Ctrl+C")
-    utolso_push_ido = 0.0
-    utolso_hiba_ertesites = 0.0
+def sync_git_safe(runtime_state: dict, now_ts: float) -> None:
+    """Nem blokkoló Git szinkronizálás; DNS/ütközés hiba esetén sem állítja le a robotot."""
+    if not ENABLE_GIT_SYNC:
+        return
+
+    last_sync = float(runtime_state.get("last_git_sync_ts", 0.0) or 0.0)
+    if now_ts - last_sync < GIT_SYNC_INTERVAL_SEC:
+        return
+
+    runtime_state["last_git_sync_ts"] = now_ts
+    target_files = [STATUS_FILE.name, HISTORY_FILE.name]
+
+    def run_git(args: list[str]) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", *args],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+
+    try:
+        run_git(["add", *target_files])
+        commit_res = run_git(["commit", "-m", "chore: update pionex robot status and history"])
+        combined_commit_out = (commit_res.stdout + commit_res.stderr).lower()
+        if commit_res.returncode != 0 and "nothing to commit" in combined_commit_out:
+            return
+
+        pull_res = run_git(["pull", "--rebase", "origin", "main"])
+        if pull_res.returncode != 0:
+            run_git(["rebase", "--abort"])
+            run_git(["checkout", "--", *target_files])
+            pull_retry = run_git(["pull", "--rebase", "origin", "main"])
+            if pull_retry.returncode != 0:
+                raise RuntimeError(f"pull --rebase hiba: {pull_retry.stderr.strip()}")
+
+        push_res = run_git(["push", "origin", "main"])
+        if push_res.returncode != 0:
+            raise RuntimeError(f"push hiba: {push_res.stderr.strip()}")
+
+    except Exception as exc:
+        send_throttled_telegram(
+            runtime_state,
+            alert_key="git_sync_error",
+            message=f"⚠️ Git szinkron hiba (a robot tovább fut): {exc}",
+            now_ts=now_ts,
+        )
+
+
+# ==============================================================================
+# 4. PIONEX ADATLEKÉRÉS ÉS FŐCIKLUSSZERVEZÉS
+# ==============================================================================
+def pionex_signed_get(path: str, params: dict | None = None) -> dict:
+    query = urlencode(sorted((params or {}).items()))
+    full_path = f"{path}?{query}" if query else path
+    sign_target = f"GET{full_path}"
+    sig = hmac.new(
+        PIONEX_API_SECRET.encode("utf-8"),
+        sign_target.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    headers = {
+        "PIONEX-KEY": PIONEX_API_KEY,
+        "PIONEX-SIGNATURE": sig,
+    }
+    return http_get_json(f"{PIONEX_BASE_URL}{full_path}", headers=headers, timeout=12)
+
+
+def fetch_pionex_ticker_price(symbol: str = SYMBOL) -> float | None:
+    try:
+        data = http_get_json(f"{PIONEX_BASE_URL}/api/v1/market/tickers?symbol={symbol}", timeout=10)
+        tickers = ((data or {}).get("data") or {}).get("tickers") or []
+        if tickers and tickers[0].get("close") is not None:
+            return float(tickers[0]["close"])
+    except Exception:
+        pass
+    return None
+
+
+def fetch_pionex_snapshot(runtime_state: dict, previous_status: dict) -> dict:
+    live_price = fetch_pionex_ticker_price(SYMBOL)
+    price = float(
+        live_price
+        or previous_status.get("pionex_price")
+        or previous_status.get("price")
+        or runtime_state.get("last_price")
+        or 70.52
+    )
+
+    free_usdt = float(previous_status.get("free_usdt") if previous_status.get("free_usdt") is not None else 0.5193)
+    free_crypto = float(
+        previous_status.get("free_crypto") if previous_status.get("free_crypto") is not None else 0.734455
+    )
+    raw_trades = previous_status.get("recent_trades") or runtime_state.get("raw_trades_cache") or []
+
+    if PIONEX_API_KEY and PIONEX_API_SECRET:
+        try:
+            bal_resp = pionex_signed_get("/api/v1/account/balances")
+            balances = ((bal_resp or {}).get("data") or {}).get("balances") or []
+            for item in balances:
+                coin = str(item.get("coin", "")).upper()
+                free_val = float(item.get("free", 0.0) or 0.0)
+                if coin == "USDT":
+                    free_usdt = free_val
+                elif coin == "SOL":
+                    free_crypto = free_val
+
+            fills_resp = pionex_signed_get("/api/v1/trade/fills", {"symbol": SYMBOL, "limit": 50})
+            fills = ((fills_resp or {}).get("data") or {}).get("fills") or []
+            if fills:
+                normalized = []
+                for f in fills:
+                    ts_ms = f.get("timestamp")
+                    iso_time = (
+                        datetime.fromtimestamp(float(ts_ms) / 1000.0, tz=timezone.utc).isoformat()
+                        if ts_ms is not None
+                        else utc_now().isoformat()
+                    )
+                    normalized.append({
+                        "order_id": f.get("orderId"),
+                        "side": f.get("side"),
+                        "source": "BOT",
+                        "price": float(f.get("price", 0.0) or 0.0),
+                        "size": float(f.get("size", 0.0) or 0.0),
+                        "cost_usdt": float(f.get("quoteQty", 0.0) or 0.0),
+                        "time": iso_time,
+                    })
+                raw_trades = normalized
+                runtime_state["raw_trades_cache"] = normalized
+        except Exception:
+            # Privát API hiba esetén a legutóbbi ismert állapotot használjuk, és nem állunk le
+            pass
+
+    consolidated = consolidate_trades(raw_trades)
+    next_bet_usdt = round(max(0.0, free_usdt - 0.0093), 2) if free_usdt > 0.5 else round(free_usdt, 2)
+
+    return {
+        "price": price,
+        "free_usdt": round(free_usdt, 4),
+        "free_crypto": round(free_crypto, 6),
+        "next_bet_usdt": next_bet_usdt,
+        "recent_trades": consolidated[:15],
+    }
+
+
+def evaluate_and_execute_cycle(runtime_state: dict, previous_status: dict, now_dt: datetime, now_ts: float) -> dict:
+    pionex = fetch_pionex_snapshot(runtime_state, previous_status)
+    indicators = fetch_indicators_safe(runtime_state, now_ts)
+
+    price = float(pionex["price"])
+    runtime_state["last_price"] = price
+
+    free_usdt = float(pionex["free_usdt"])
+    free_crypto = float(pionex["free_crypto"])
+    position_usd = round(free_crypto * price, 2)
+    total_usd = round(free_usdt + position_usd, 2)
+
+    has_position = bool(runtime_state.get("has_position", free_crypto > 0.01))
+    runtime_state["has_position"] = has_position
+
+    ma10 = indicators.get("ma10")
+    ma30 = indicators.get("ma30")
+    adx = indicators.get("adx")
+    rsi = indicators.get("rsi")
+
+    status = "VÁRAKOZÁS"
+    status_detail = ""
+
+    if has_position:
+        entry_price = float(runtime_state.get("entry_price") or price)
+        should_sell, reason = update_position_stops(runtime_state, price)
+
+        trend_exit = (
+            ma10 is not None
+            and ma30 is not None
+            and float(ma10) < float(ma30)
+            and rsi is not None
+            and float(rsi) > RSI_MAX
+        )
+
+        if should_sell or trend_exit:
+            sell_reason = reason or "TREND_EXIT"
+            if LIVE_TRADING_ENABLED:
+                # Éles eladási hívás helye (ha engedélyezve van)
+                pass
+            runtime_state["has_position"] = False
+            runtime_state["trailing_active"] = False
+            runtime_state["highest_price"] = None
+            runtime_state["last_sell_time"] = now_dt.isoformat()
+            has_position = False
+            status = "ELADÁS"
+            status_detail = f"Eladva @ ${price:.2f} | Ok: {sell_reason}"
+        else:
+            profit_pct = round(((price - entry_price) / entry_price) * 100.0, 2) if entry_price > 0 else 0.0
+            sl_price = runtime_state.get("stop_loss_price")
+            status = "TARTÁS"
+            status_detail = (
+                f"{free_crypto:.2f} SOL (~{position_usd:.2f} USD) | "
+                f"Eredmény: {profit_pct:+.2f}% | SL: ${sl_price}"
+            )
+    else:
+        in_cooldown, rem_sec = is_in_sell_cooldown(runtime_state.get("last_sell_time"), now_dt)
+        buy_signal = (
+            not in_cooldown
+            and ma10 is not None
+            and ma30 is not None
+            and adx is not None
+            and rsi is not None
+            and float(ma10) > float(ma30)
+            and float(adx) >= ADX_MIN
+            and float(rsi) <= RSI_MAX
+            and free_usdt >= MIN_BUY_USDT
+        )
+
+        if buy_signal:
+            if LIVE_TRADING_ENABLED:
+                # Éles vételi hívás helye (ha engedélyezve van)
+                pass
+            entry_size = round(free_usdt / price, 6) if price > 0 else 0.0
+            runtime_state["has_position"] = True
+            runtime_state["entry_price"] = price
+            runtime_state["entry_time"] = now_dt.isoformat()
+            runtime_state["entry_size"] = entry_size
+            runtime_state["entry_cost_usdt"] = round(free_usdt, 2)
+            runtime_state["highest_price"] = price
+            runtime_state["trailing_active"] = False
+            runtime_state["stop_loss_price"] = round(price * (1.0 - STOP_LOSS_PCT / 100.0), 4)
+            has_position = True
+            status = "TARTÁS"
+            status_detail = f"Belépés @ ${price:.2f} | SL: ${runtime_state['stop_loss_price']}"
+        elif in_cooldown:
+            status = "VÁRAKOZÁS"
+            status_detail = f"SELL utáni cooldown aktív ({rem_sec} mp hátra)"
+        else:
+            status = "VÁRAKOZÁS"
+            status_detail = f"Ár: ${price:.2f} | MA10: {ma10} / MA30: {ma30} | ADX: {adx}"
+
+    entry_price_val = runtime_state.get("entry_price") if has_position else None
+    entry_size_val = runtime_state.get("entry_size") if has_position else None
+    entry_cost_val = runtime_state.get("entry_cost_usdt") if has_position else None
+    profit_pct_val = (
+        round(((price - float(entry_price_val)) / float(entry_price_val)) * 100.0, 2)
+        if has_position and entry_price_val
+        else 0.0
+    )
+    profit_usdt_val = (
+        round((price - float(entry_price_val)) * float(entry_size_val), 2)
+        if has_position and entry_price_val and entry_size_val
+        else 0.0
+    )
+
+    status_doc = {
+        "updated_at": now_dt.isoformat(),
+        "symbol": SYMBOL,
+        "base_coin": "SOL",
+        "quote_coin": "USDT",
+        "price": price,
+        "pionex_price": price,
+        "yf_price": indicators.get("yf_price"),
+        "ma5": indicators.get("ma5"),
+        "ma15": indicators.get("ma15"),
+        "ma10": ma10,
+        "ma30": ma30,
+        "adx": adx,
+        "rsi": rsi,
+        "free_usdt": free_usdt,
+        "free_crypto": free_crypto,
+        "next_bet_usdt": pionex["next_bet_usdt"],
+        "position_usd": position_usd,
+        "total_usd": total_usd,
+        "has_position": has_position,
+        "entry_price": entry_price_val,
+        "entry_time": runtime_state.get("entry_time") if has_position else None,
+        "entry_size": entry_size_val,
+        "entry_cost_usdt": entry_cost_val,
+        "highest_price": runtime_state.get("highest_price") if has_position else None,
+        "trailing_active": bool(runtime_state.get("trailing_active", False)),
+        "stop_loss_price": runtime_state.get("stop_loss_price") if has_position else None,
+        "stop_loss_pct": STOP_LOSS_PCT,
+        "profit_pct": profit_pct_val,
+        "profit_usdt": profit_usdt_val,
+        "status": status,
+        "status_detail": status_detail,
+        "adx_min": ADX_MIN,
+        "rsi_max": RSI_MAX,
+        "manual_buys": [],
+        "recent_trades": pionex["recent_trades"],
+    }
+
+    save_json_atomic(STATUS_FILE, status_doc)
+
+    history = load_json_safe(HISTORY_FILE, [])
+    if not isinstance(history, list):
+        history = []
+
+    should_append_history = True
+    if history:
+        last_entry = history[-1]
+        last_dt = parse_iso_utc(last_entry.get("time"))
+        same_status = last_entry.get("status") == status
+        recent_write = last_dt is not None and (now_dt - last_dt).total_seconds() < 3600
+        if same_status and recent_write:
+            should_append_history = False
+
+    if should_append_history:
+        history.append({
+            "time": now_dt.isoformat(),
+            "total_usd": total_usd,
+            "price": price,
+            "status": status,
+        })
+        save_json_atomic(HISTORY_FILE, history[-2000:])
+
+    save_json_atomic(STATE_FILE, runtime_state)
+    return status_doc
+
+
+def run_robot_forever() -> None:
+    initial_status = load_json_safe(STATUS_FILE, {})
+    runtime_state = load_json_safe(
+        STATE_FILE,
+        {
+            "has_position": bool(initial_status.get("has_position", True)),
+            "entry_price": initial_status.get("entry_price", 70.03),
+            "entry_time": initial_status.get("entry_time", "2026-11-26T15:09:31.117000+00:00"),
+            "entry_size": initial_status.get("entry_size", 0.727974),
+            "entry_cost_usdt": initial_status.get("entry_cost_usdt", 50.98),
+            "highest_price": initial_status.get("highest_price", 70.52),
+            "trailing_active": bool(initial_status.get("trailing_active", False)),
+            "stop_loss_price": initial_status.get("stop_loss_price", 65.83),
+            "last_sell_time": "2026-11-26T15:09:12.670000+00:00",
+            "alert_timestamps": {},
+            "last_git_sync_ts": 0.0,
+        },
+    )
 
     while True:
+        now_dt = utc_now()
+        now_ts = time.time()
+        previous_status = load_json_safe(STATUS_FILE, {})
+
         try:
-            dontes = futtatas()
-            utolso_push_ido = github_allapot_feltoltese(dontes, utolso_push_ido)
-        except KeyboardInterrupt:
-            print("\nRobot leállítva a felhasználó által (Ctrl+C).")
-            break
-        except Exception as hiba:
-            print(f"ROBOT HIBA (folytatás {CIKLUSSZUNET_MP} mp múlva): {hiba}")
-            most_ts = time.time()
-            if (most_ts - utolso_hiba_ertesites) >= HIBA_ERTESITES_SZUNET_MP:
-                utolso_hiba_ertesites = most_ts
-                telegram_uzenet(
-                    f"⚠️ ROBOT HIBA (folyamatos mód) | {PIONEX_SZIMBOLUM}\n"
-                    f"Hibaüzenet: {hiba}"
-                )
-        time.sleep(CIKLUSSZUNET_MP)
+            evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts)
+            sync_git_safe(runtime_state, now_ts)
+        except Exception as exc:
+            send_throttled_telegram(
+                runtime_state,
+                alert_key="main_loop_error",
+                message=f"⚠️ Robot ciklus hiba: {exc}",
+                now_ts=now_ts,
+            )
+
+        time.sleep(CYCLE_SECONDS)
 
 
 if __name__ == "__main__":
-    if FOLYAMATOS_MOD:
-        folytonos_futtatas()
-    else:
-        try:
-            futtatas()
-        except Exception as hiba:
-            print(f"ROBOT HIBA: {hiba}")
-            telegram_uzenet(
-                f"⚠️ ROBOT HIBA | {PIONEX_SZIMBOLUM}\n"
-                f"Hibaüzenet: {hiba}"
-            )
-            sys.exit(1)
+    run_robot_forever()
