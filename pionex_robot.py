@@ -15,9 +15,9 @@ import ta
 TESZT_MOD = False                       # Éles mód (a robot kereskedik)
 FOLYAMATOS_MOD = True                   # True: folyamatos hurok | False: egyetlen futás
 CIKLUSSZUNET_MP = 45                    # 45 másodpercenként ellenőriz a folyamatos hurokban
-GITHUB_PUSH_MOD = False                 # True: frissíti a status.json/history.json fájlokat GitHubon
-GITHUB_PUSH_INTERVAL_MP = 300           # Állapotváltozás nélkül hány mp-ként pusholjon (ha engedélyezve van)
-HIBA_ERTESITES_SZUNET_MP = 900          # Hiba esetén legalább 15 percenként küld Telegram hibát (ne spammeljen)
+GITHUB_PUSH_MOD = True                  # True: frissíti a Pionex JSON fájlokat a GitHubon
+GITHUB_PUSH_INTERVAL_MP = 300           # Állapotváltozás nélkül 5 percenként pusholjon
+HIBA_ERTESITES_SZUNET_MP = 900          # Hiba esetén legalább 15 percenként küld Telegram hibát
 
 YF_SZIMBOLUM = "SOL-USD"                # Yahoo Finance jelölés
 PIONEX_SZIMBOLUM = "SOL_USDT"           # Pionex pár
@@ -33,6 +33,9 @@ KORAI_PROFIT_VISSZAHUZAS_PCT = 1.2     # +2.0%..+4.0% között a csúcsból -1.2
 MA_ELADAS_MIN_PROFIT_PCT = 0.5          # MA10 < MA30 legalább +0.5% nyereségnél zár
 KORAI_BELEPES = True                    # Gyorsabb trendkövetés induló emelkedésnél
 ALAP_TIZEDES_PONTOSSAG = 2              # Tartalék tizedespontosság, ha az API-lekérés nem elérhető
+
+ALLAPOT_FAJL = "pionex_status.json"
+ELOZMENY_FAJL = "pionex_history.json"
 
 # --- SZŰRŐK ---
 ADX_MINIMUM = 14                        # 14 alatt gyenge/oldalazó mozgás
@@ -197,7 +200,7 @@ def utolso_vetel_adatok(kotesek, manual_buys=None):
 
 def elozo_allapot_betoltese():
     try:
-        with open("status.json", "r", encoding="utf-8") as f:
+        with open(ALLAPOT_FAJL, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return {}
@@ -209,10 +212,9 @@ def lefele_kerekit(ertek, tizedes):
 
 
 def profit_gorbe_mentese(teljes_usd, aktualis_ar, allapot):
-    fajl = "history.json"
     most = datetime.now(timezone.utc)
     try:
-        with open(fajl, "r", encoding="utf-8") as f:
+        with open(ELOZMENY_FAJL, "r", encoding="utf-8") as f:
             elozmenyek = json.load(f)
             if not isinstance(elozmenyek, list):
                 elozmenyek = []
@@ -238,9 +240,9 @@ def profit_gorbe_mentese(teljes_usd, aktualis_ar, allapot):
             "status": allapot
         })
         elozmenyek = elozmenyek[-720:]
-        with open(fajl, "w", encoding="utf-8") as f:
+        with open(ELOZMENY_FAJL, "w", encoding="utf-8") as f:
             json.dump(elozmenyek, f, ensure_ascii=False, indent=2)
-        print(f"Profit-görbe frissítve ({len(elozmenyek)} pont a history.json-ban).")
+        print(f"Profit-görbe frissítve ({len(elozmenyek)} pont a {ELOZMENY_FAJL} fájlban).")
 
 
 def github_allapot_feltoltese(dontes, utolso_push_ido):
@@ -252,13 +254,13 @@ def github_allapot_feltoltese(dontes, utolso_push_ido):
         return utolso_push_ido
 
     try:
-        subprocess.run(["git", "add", "status.json", "history.json"], check=True)
+        subprocess.run(["git", "add", ALLAPOT_FAJL, ELOZMENY_FAJL], check=True)
         diff = subprocess.run(["git", "diff", "--cached", "--quiet"])
         if diff.returncode != 0:
-            uzenet = f"Laptop robot frissítés ({dontes}) - {datetime.now(timezone.utc).strftime('%H:%M UTC')}"
+            uzenet = f"Pionex robot frissítés ({dontes}) - {datetime.now(timezone.utc).strftime('%H:%M UTC')} [skip ci]"
             subprocess.run(["git", "commit", "-m", uzenet], check=True)
             subprocess.run(["git", "push"], check=True)
-            print("GitHub dashboard fájlok (status.json, history.json) feltöltve.")
+            print(f"GitHub app fájlok ({ALLAPOT_FAJL}, {ELOZMENY_FAJL}) feltöltve.")
         return most_ts
     except Exception as hiba:
         print(f"Figyelmeztetés: GitHub push sikertelen ({hiba})")
@@ -680,9 +682,9 @@ def futtatas():
         "recent_trades": kotesek
     }
 
-    with open("status.json", "w", encoding="utf-8") as f:
+    with open(ALLAPOT_FAJL, "w", encoding="utf-8") as f:
         json.dump(dashboard_adat, f, ensure_ascii=False, indent=2)
-    print("Dashboard status.json sikeresen elmentve.")
+    print(f"Dashboard {ALLAPOT_FAJL} sikeresen elmentve.")
 
     profit_gorbe_mentese(szabad_usdt + pozicio_ertek_usd, ar, dontes)
     return dontes
