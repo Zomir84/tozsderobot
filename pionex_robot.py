@@ -6,7 +6,6 @@ import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -28,8 +27,8 @@ STOP_LOSS_PCT = 6.0              # Fix Stop-Loss (%)
 TRAILING_ACTIVATION_PCT = 1.5    # +1.5% nyereségnél aktiválódik a trailing stop
 TRAILING_CALLBACK_PCT = 1.0      # 1.0% visszaesés a csúcsból zárja a pozíciót
 ALERT_COOLDOWN_SEC = 1800      # Azonos hibából max. 30 percenként 1 Telegram-üzenet
-GIT_SYNC_INTERVAL_SEC = 120    # Git push/pull legfeljebb 2 percenként
-ENABLE_GIT_SYNC = True           # VPS-en vagy teszteléskor False-ra állítható
+GIT_SYNC_INTERVAL_SEC = 120    # Git pull --rebase + push legfeljebb 2 percenként
+ENABLE_GIT_SYNC = True           # VPS-en vagy teszteléskor igény szerint False-ra állítható
 LIVE_TRADING_ENABLED = False     # Csak akkor állítsd True-ra, ha éles Pionex megbízást is küldjön
 
 ADX_MIN = 14.0
@@ -188,7 +187,7 @@ def update_position_stops(runtime_state: dict, current_price: float) -> tuple[bo
 
 
 # ==============================================================================
-# 3. HIBAKEZELÉS: TELEGRAM RITKÍTÁS, YAHOO TARTALÉK, GIT SZINKRON
+# 3. HIBAKEZELÉS: TELEGRAM RITKÍTÁS, YAHOO TARTALÉK, GIT PULL --REBASE + PUSH
 # ==============================================================================
 def send_telegram_now(message: str) -> None:
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -335,7 +334,11 @@ def fetch_indicators_safe(runtime_state: dict, now_ts: float) -> dict:
 
 
 def sync_git_safe(runtime_state: dict, now_ts: float) -> None:
-    """Nem blokkoló Git szinkronizálás; DNS/ütközés hiba esetén sem állítja le a robotot."""
+    """
+    Nem blokkoló Git szinkronizálás: minden push előtt futtatja a
+    `git pull --rebase origin main` parancsot, ütközés esetén tiszta
+    visszaállítással és újrapróbálkozással.
+    """
     if not ENABLE_GIT_SYNC:
         return
 
@@ -352,27 +355,60 @@ def sync_git_safe(runtime_state: dict, now_ts: float) -> None:
             cwd=str(BASE_DIR),
             capture_output=True,
             text=True,
-            timeout=20,
+            timeout=25,
         )
 
-    try:
-        run_git(["add", *target_files])
-        commit_res = run_git(["commit", "-m", "chore: update pionex robot status and history"])
-        combined_commit_out = (commit_res.stdout + commit_res.stderr).lower()
-        if commit_res.returncode != 0 and "nothing to commit" in combined_commit_out:
+    def pull_rebase_with_conflict_recovery() -> None:
+        pull_res = run_git(["pull", "--rebase", "origin", "main"])
+        if pull_res.returncode == 0:
             return
 
-        pull_res = run_git(["pull", "--rebase", "origin", "main"])
-        if pull_res.returncode != 0:
-            run_git(["rebase", "--abort"])
-            run_git(["checkout", "--", *target_files])
-            pull_retry = run_git(["pull", "--rebase", "origin", "main"])
-            if pull_retry.returncode != 0:
-                raise RuntimeError(f"pull --rebase hiba: {pull_retry.stderr.strip()}")
+        # Ha félbehagyott rebase maradt fenn, megszakítjuk, majd tiszta munkakönyvtárral húzunk be
+        run_git(["rebase", "--abort"])
+        run_git(["checkout", "--", *target_files])
 
+        pull_retry = run_git(["pull", "--rebase", "origin", "main"])
+        if pull_retry.returncode == 0:
+            return
+
+        # Ha továbbra is konfliktus van a JSON fájlokon, a legfrissebb állapotot megtartva továbblépünk
+        run_git(["checkout", "--theirs", *target_files])
+        run_git(["add", *target_files])
+        rebase_cont = run_git(["rebase", "--continue"])
+        if rebase_cont.returncode != 0:
+            run_git(["rebase", "--abort"])
+            run_git(["fetch", "origin", "main"])
+            reset_res = run_git(["reset", "--hard", "origin/main"])
+            if reset_res.returncode != 0:
+                raise RuntimeError(f"Git ütközéskezelés sikertelen: {pull_retry.stderr.strip()}")
+
+    try:
+        # 1. Meglévő (akár korábban sikertelen push miatt beragadt) helyi commitok rebase-elése
+        pull_rebase_with_conflict_recovery()
+
+        # 2. Friss JSON állapotok stage-elése és commitolása, ha van változás
+        run_git(["add", *target_files])
+        commit_msg = f"Pionex robot frissítés - {utc_now().strftime('%H:%M')} UTC [skip ci]"
+        commit_res = run_git(["commit", "-m", commit_msg])
+        combined_commit_out = (commit_res.stdout + commit_res.stderr).lower()
+        has_new_commit = not (
+            commit_res.returncode != 0 and "nothing to commit" in combined_commit_out
+        )
+
+        # 3. Push előtt ismét frissítjük a távoli origin/main változásait
+        pull_rebase_with_conflict_recovery()
+
+        # 4. Push (ha van új helyi commit vagy előrehaladott helyi ág)
         push_res = run_git(["push", "origin", "main"])
         if push_res.returncode != 0:
-            raise RuntimeError(f"push hiba: {push_res.stderr.strip()}")
+            # Végső mentőöv: még egy pull --rebase + push próba ütközéskezeléssel
+            pull_rebase_with_conflict_recovery()
+            push_retry = run_git(["push", "origin", "main"])
+            if push_retry.returncode != 0:
+                raise RuntimeError(f"git push origin main sikertelen: {push_retry.stderr.strip()}")
+
+        if has_new_commit:
+            print(f"[GIT] Szinkronizálva az origin/main ággal ({commit_msg}).")
 
     except Exception as exc:
         send_throttled_telegram(
@@ -464,7 +500,6 @@ def fetch_pionex_snapshot(runtime_state: dict, previous_status: dict) -> dict:
                 raw_trades = normalized
                 runtime_state["raw_trades_cache"] = normalized
         except Exception:
-            # Privát API hiba esetén a legutóbbi ismert állapotot használjuk, és nem állunk le
             pass
 
     consolidated = consolidate_trades(raw_trades)
@@ -491,203 +526,4 @@ def evaluate_and_execute_cycle(runtime_state: dict, previous_status: dict, now_d
     position_usd = round(free_crypto * price, 2)
     total_usd = round(free_usdt + position_usd, 2)
 
-    has_position = bool(runtime_state.get("has_position", free_crypto > 0.01))
-    runtime_state["has_position"] = has_position
-
-    ma10 = indicators.get("ma10")
-    ma30 = indicators.get("ma30")
-    adx = indicators.get("adx")
-    rsi = indicators.get("rsi")
-
-    status = "VÁRAKOZÁS"
-    status_detail = ""
-
-    if has_position:
-        entry_price = float(runtime_state.get("entry_price") or price)
-        should_sell, reason = update_position_stops(runtime_state, price)
-
-        trend_exit = (
-            ma10 is not None
-            and ma30 is not None
-            and float(ma10) < float(ma30)
-            and rsi is not None
-            and float(rsi) > RSI_MAX
-        )
-
-        if should_sell or trend_exit:
-            sell_reason = reason or "TREND_EXIT"
-            if LIVE_TRADING_ENABLED:
-                # Éles eladási hívás helye (ha engedélyezve van)
-                pass
-            runtime_state["has_position"] = False
-            runtime_state["trailing_active"] = False
-            runtime_state["highest_price"] = None
-            runtime_state["last_sell_time"] = now_dt.isoformat()
-            has_position = False
-            status = "ELADÁS"
-            status_detail = f"Eladva @ ${price:.2f} | Ok: {sell_reason}"
-        else:
-            profit_pct = round(((price - entry_price) / entry_price) * 100.0, 2) if entry_price > 0 else 0.0
-            sl_price = runtime_state.get("stop_loss_price")
-            status = "TARTÁS"
-            status_detail = (
-                f"{free_crypto:.2f} SOL (~{position_usd:.2f} USD) | "
-                f"Eredmény: {profit_pct:+.2f}% | SL: ${sl_price}"
-            )
-    else:
-        in_cooldown, rem_sec = is_in_sell_cooldown(runtime_state.get("last_sell_time"), now_dt)
-        buy_signal = (
-            not in_cooldown
-            and ma10 is not None
-            and ma30 is not None
-            and adx is not None
-            and rsi is not None
-            and float(ma10) > float(ma30)
-            and float(adx) >= ADX_MIN
-            and float(rsi) <= RSI_MAX
-            and free_usdt >= MIN_BUY_USDT
-        )
-
-        if buy_signal:
-            if LIVE_TRADING_ENABLED:
-                # Éles vételi hívás helye (ha engedélyezve van)
-                pass
-            entry_size = round(free_usdt / price, 6) if price > 0 else 0.0
-            runtime_state["has_position"] = True
-            runtime_state["entry_price"] = price
-            runtime_state["entry_time"] = now_dt.isoformat()
-            runtime_state["entry_size"] = entry_size
-            runtime_state["entry_cost_usdt"] = round(free_usdt, 2)
-            runtime_state["highest_price"] = price
-            runtime_state["trailing_active"] = False
-            runtime_state["stop_loss_price"] = round(price * (1.0 - STOP_LOSS_PCT / 100.0), 4)
-            has_position = True
-            status = "TARTÁS"
-            status_detail = f"Belépés @ ${price:.2f} | SL: ${runtime_state['stop_loss_price']}"
-        elif in_cooldown:
-            status = "VÁRAKOZÁS"
-            status_detail = f"SELL utáni cooldown aktív ({rem_sec} mp hátra)"
-        else:
-            status = "VÁRAKOZÁS"
-            status_detail = f"Ár: ${price:.2f} | MA10: {ma10} / MA30: {ma30} | ADX: {adx}"
-
-    entry_price_val = runtime_state.get("entry_price") if has_position else None
-    entry_size_val = runtime_state.get("entry_size") if has_position else None
-    entry_cost_val = runtime_state.get("entry_cost_usdt") if has_position else None
-    profit_pct_val = (
-        round(((price - float(entry_price_val)) / float(entry_price_val)) * 100.0, 2)
-        if has_position and entry_price_val
-        else 0.0
-    )
-    profit_usdt_val = (
-        round((price - float(entry_price_val)) * float(entry_size_val), 2)
-        if has_position and entry_price_val and entry_size_val
-        else 0.0
-    )
-
-    status_doc = {
-        "updated_at": now_dt.isoformat(),
-        "symbol": SYMBOL,
-        "base_coin": "SOL",
-        "quote_coin": "USDT",
-        "price": price,
-        "pionex_price": price,
-        "yf_price": indicators.get("yf_price"),
-        "ma5": indicators.get("ma5"),
-        "ma15": indicators.get("ma15"),
-        "ma10": ma10,
-        "ma30": ma30,
-        "adx": adx,
-        "rsi": rsi,
-        "free_usdt": free_usdt,
-        "free_crypto": free_crypto,
-        "next_bet_usdt": pionex["next_bet_usdt"],
-        "position_usd": position_usd,
-        "total_usd": total_usd,
-        "has_position": has_position,
-        "entry_price": entry_price_val,
-        "entry_time": runtime_state.get("entry_time") if has_position else None,
-        "entry_size": entry_size_val,
-        "entry_cost_usdt": entry_cost_val,
-        "highest_price": runtime_state.get("highest_price") if has_position else None,
-        "trailing_active": bool(runtime_state.get("trailing_active", False)),
-        "stop_loss_price": runtime_state.get("stop_loss_price") if has_position else None,
-        "stop_loss_pct": STOP_LOSS_PCT,
-        "profit_pct": profit_pct_val,
-        "profit_usdt": profit_usdt_val,
-        "status": status,
-        "status_detail": status_detail,
-        "adx_min": ADX_MIN,
-        "rsi_max": RSI_MAX,
-        "manual_buys": [],
-        "recent_trades": pionex["recent_trades"],
-    }
-
-    save_json_atomic(STATUS_FILE, status_doc)
-
-    history = load_json_safe(HISTORY_FILE, [])
-    if not isinstance(history, list):
-        history = []
-
-    should_append_history = True
-    if history:
-        last_entry = history[-1]
-        last_dt = parse_iso_utc(last_entry.get("time"))
-        same_status = last_entry.get("status") == status
-        recent_write = last_dt is not None and (now_dt - last_dt).total_seconds() < 3600
-        if same_status and recent_write:
-            should_append_history = False
-
-    if should_append_history:
-        history.append({
-            "time": now_dt.isoformat(),
-            "total_usd": total_usd,
-            "price": price,
-            "status": status,
-        })
-        save_json_atomic(HISTORY_FILE, history[-2000:])
-
-    save_json_atomic(STATE_FILE, runtime_state)
-    return status_doc
-
-
-def run_robot_forever() -> None:
-    initial_status = load_json_safe(STATUS_FILE, {})
-    runtime_state = load_json_safe(
-        STATE_FILE,
-        {
-            "has_position": bool(initial_status.get("has_position", True)),
-            "entry_price": initial_status.get("entry_price", 70.03),
-            "entry_time": initial_status.get("entry_time", "2026-11-26T15:09:31.117000+00:00"),
-            "entry_size": initial_status.get("entry_size", 0.727974),
-            "entry_cost_usdt": initial_status.get("entry_cost_usdt", 50.98),
-            "highest_price": initial_status.get("highest_price", 70.52),
-            "trailing_active": bool(initial_status.get("trailing_active", False)),
-            "stop_loss_price": initial_status.get("stop_loss_price", 65.83),
-            "last_sell_time": "2026-11-26T15:09:12.670000+00:00",
-            "alert_timestamps": {},
-            "last_git_sync_ts": 0.0,
-        },
-    )
-
-    while True:
-        now_dt = utc_now()
-        now_ts = time.time()
-        previous_status = load_json_safe(STATUS_FILE, {})
-
-        try:
-            evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts)
-            sync_git_safe(runtime_state, now_ts)
-        except Exception as exc:
-            send_throttled_telegram(
-                runtime_state,
-                alert_key="main_loop_error",
-                message=f"⚠️ Robot ciklus hiba: {exc}",
-                now_ts=now_ts,
-            )
-
-        time.sleep(CYCLE_SECONDS)
-
-
-if __name__ == "__main__":
-    run_robot_forever()
+    has_position = bool(runtime_state.get("has_position", free_crypto >
