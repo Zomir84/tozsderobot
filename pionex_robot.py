@@ -526,4 +526,96 @@ def evaluate_and_execute_cycle(runtime_state: dict, previous_status: dict, now_d
     position_usd = round(free_crypto * price, 2)
     total_usd = round(free_usdt + position_usd, 2)
 
-    has_position = bool(runtime_state.get("has_position", free_crypto >
+    has_position = bool(runtime_state.get("has_position", free_crypto > 0.01))
+runtime_state["has_position"] = has_position
+    ma10, ma30, adx, rsi = indicators.get("ma10"), indicators.get("ma30"), indicators.get("adx"), indicators.get("rsi")
+    status, status_detail = "VÁRAKOZÁS", ""
+
+    if has_position:
+        entry_price = float(runtime_state.get("entry_price") or price)
+        should_sell, reason = update_position_stops(runtime_state, price)
+        trend_exit = bool(ma10 is not None and ma30 is not None and float(ma10) < float(ma30) and rsi is not None and float(rsi) > RSI_MAX)
+        if should_sell or trend_exit:
+            runtime_state.update({"has_position": False, "trailing_active": False, "highest_price": None, "last_sell_time": now_dt.isoformat()})
+            has_position = False
+            status, status_detail = "ELADÁS", f"Eladva @ ${price:.2f} | Ok: {reason or 'TREND_EXIT'}"
+        else:
+            profit_pct = round(((price - entry_price) / entry_price) * 100.0, 2) if entry_price > 0 else 0.0
+            status, status_detail = "TARTÁS", f"{free_crypto:.2f} SOL (~{position_usd:.2f} USD) | Eredmény: {profit_pct:+.2f}% | SL: ${runtime_state.get('stop_loss_price')}"
+    else:
+        in_cooldown, rem_sec = is_in_sell_cooldown(runtime_state.get("last_sell_time"), now_dt)
+        buy_signal = bool(not in_cooldown and ma10 is not None and ma30 is not None and adx is not None and rsi is not None and float(ma10) > float(ma30) and float(adx) >= ADX_MIN and float(rsi) <= RSI_MAX and free_usdt >= MIN_BUY_USDT)
+        if buy_signal:
+            entry_size = round(free_usdt / price, 6) if price > 0 else 0.0
+            sl_val = round(price * (1.0 - STOP_LOSS_PCT / 100.0), 4)
+            runtime_state.update({"has_position": True, "entry_price": price, "entry_time": now_dt.isoformat(), "entry_size": entry_size, "entry_cost_usdt": round(free_usdt, 2), "highest_price": price, "trailing_active": False, "stop_loss_price": sl_val})
+            has_position = True
+            status, status_detail = "TARTÁS", f"Belépés @ ${price:.2f} | SL: ${sl_val}"
+        elif in_cooldown:
+            status, status_detail = "VÁRAKOZÁS", f"SELL utáni cooldown aktív ({rem_sec} mp hátra)"
+        else:
+            status, status_detail = "VÁRAKOZÁS", f"Ár: ${price:.2f} | MA10: {ma10} / MA30: {ma30} | ADX: {adx}"
+
+    entry_price_val = runtime_state.get("entry_price") if has_position else None
+    entry_size_val = runtime_state.get("entry_size") if has_position else None
+    entry_cost_val = runtime_state.get("entry_cost_usdt") if has_position else None
+    profit_pct_val = round(((price - float(entry_price_val)) / float(entry_price_val)) * 100.0, 2) if has_position and entry_price_val else 0.0
+    profit_usdt_val = round((price - float(entry_price_val)) * float(entry_size_val), 2) if has_position and entry_price_val and entry_size_val else 0.0
+
+    status_doc = {
+        "updated_at": now_dt.isoformat(), "symbol": SYMBOL, "base_coin": "SOL", "quote_coin": "USDT",
+        "price": price, "pionex_price": price, "yf_price": indicators.get("yf_price"),
+        "ma5": indicators.get("ma5"), "ma15": indicators.get("ma15"), "ma10": ma10, "ma30": ma30,
+        "adx": adx, "rsi": rsi, "free_usdt": free_usdt, "free_crypto": free_crypto,
+        "next_bet_usdt": pionex["next_bet_usdt"], "position_usd": position_usd, "total_usd": total_usd,
+        "has_position": has_position, "entry_price": entry_price_val,
+        "entry_time": runtime_state.get("entry_time") if has_position else None,
+        "entry_size": entry_size_val, "entry_cost_usdt": entry_cost_val,
+        "highest_price": runtime_state.get("highest_price") if has_position else None,
+        "trailing_active": bool(runtime_state.get("trailing_active", False)),
+        "stop_loss_price": runtime_state.get("stop_loss_price") if has_position else None,
+        "stop_loss_pct": STOP_LOSS_PCT, "profit_pct": profit_pct_val, "profit_usdt": profit_usdt_val,
+        "status": status, "status_detail": status_detail, "adx_min": ADX_MIN, "rsi_max": RSI_MAX,
+        "manual_buys": [], "recent_trades": pionex["recent_trades"],
+    }
+    save_json_atomic(STATUS_FILE, status_doc)
+
+    history = load_json_safe(HISTORY_FILE, [])
+    if not isinstance(history, list):
+        history = []
+    last_entry = history[-1] if history else None
+    last_dt = parse_iso_utc(last_entry.get("time")) if last_entry else None
+    if not (last_entry and last_entry.get("status") == status and last_dt and (now_dt - last_dt).total_seconds() < 3600):
+        history.append({"time": now_dt.isoformat(), "total_usd": total_usd, "price": price, "status": status})
+        save_json_atomic(HISTORY_FILE, history[-2000:])
+
+    save_json_atomic(STATE_FILE, runtime_state)
+    return status_doc
+
+
+def run_robot_forever() -> None:
+    initial_status = load_json_safe(STATUS_FILE, {})
+    runtime_state = load_json_safe(STATE_FILE, {
+        "has_position": bool(initial_status.get("has_position", True)),
+        "entry_price": initial_status.get("entry_price", 70.03),
+        "entry_time": initial_status.get("entry_time", "2026-11-26T15:09:31.117000+00:00"),
+        "entry_size": initial_status.get("entry_size", 0.727974),
+        "entry_cost_usdt": initial_status.get("entry_cost_usdt", 50.98),
+        "highest_price": initial_status.get("highest_price", 70.52),
+        "trailing_active": bool(initial_status.get("trailing_active", False)),
+        "stop_loss_price": initial_status.get("stop_loss_price", 65.83),
+        "last_sell_time": "2026-11-26T15:09:12.670000+00:00",
+        "alert_timestamps": {}, "last_git_sync_ts": 0.0,
+    })
+    while True:
+        now_dt, now_ts = utc_now(), time.time()
+        previous_status = load_json_safe(STATUS_FILE, {})
+        try:
+            evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts)
+            sync_git_safe(runtime_state, now_ts)
+        except Exception as exc:
+            send_throttled_telegram(runtime_state, "main_loop_error", f"⚠️ Robot ciklus hiba: {exc}", now_ts)
+        time.sleep(CYCLE_SECONDS)
+
+if __name__ == "__main__":
+    run_robot_forever()
