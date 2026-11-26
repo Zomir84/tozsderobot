@@ -557,7 +557,7 @@
           <div class="ind-hint" id="maHint">-</div>
         </div>
         <div class="ind-box">
-          <div class="ind-name">ADX (Min. 15)</div>
+          <div class="ind-name">ADX (Min. 14)</div>
           <div class="ind-val" id="adxVal">-</div>
           <div class="ind-hint" id="adxHint">-</div>
         </div>
@@ -678,7 +678,7 @@
       profit_usdt: -0.26,
       status: "TARTÁS",
       status_detail: "0.218 SOL (~15.13 USD)",
-      adx_min: 15,
+      adx_min: 14,
       rsi_max: 72,
       manual_buys: [],
       recent_trades: []
@@ -1138,7 +1138,7 @@
 
     async function loadHistory() {
       try {
-        const res = await fetch(`./history.json?cachebust=${Date.now()}`, {
+        const res = await fetch(`./pionex_history.json?cachebust=${Date.now()}`, {
           cache: 'no-store',
           headers: { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' }
         });
@@ -1296,7 +1296,7 @@
     function renderTrades(trades) {
       const container = document.getElementById('tradesList');
       if (!trades || trades.length === 0) {
-        container.innerHTML = '<p style="font-size: 0.82rem; color: var(--muted);">Még nincsenek betöltött kötések. Várd meg a következő 10 perces robot-futást (vagy indíts egy Run workflow-t).</p>';
+        container.innerHTML = '<p style="font-size: 0.82rem; color: var(--muted);">Még nincsenek betöltött kötések. Várd meg a következő frissítést.</p>';
         return;
       }
       container.innerHTML = trades.map(t => {
@@ -1442,7 +1442,7 @@
 
       let okJson = false;
       try {
-        const res = await fetch(`./status.json?cachebust=${Date.now()}`, {
+        const res = await fetch(`./pionex_status.json?cachebust=${Date.now()}`, {
           cache: 'no-store',
           headers: { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' }
         });
@@ -1460,7 +1460,7 @@
       syncFromCurrentData();
 
       if (updEl && !okJson) {
-        updEl.textContent += ' • (status.json nem elérhető / régi)';
+        updEl.textContent += ' • (pionex_status.json nem elérhető / régi)';
       }
 
       try { await loadLiveChart(currentTf); } catch (e) {}
