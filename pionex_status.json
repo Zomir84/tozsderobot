@@ -1,0 +1,171 @@
+{
+  "updated_at": "2026-11-26T03:42:31.920246+00:00",
+  "symbol": "SOL_USDT",
+  "base_coin": "SOL",
+  "quote_coin": "USDT",
+  "price": 71.06,
+  "pionex_price": 71.06,
+  "yf_price": 70.96,
+  "ma10": 70.56,
+  "ma30": 69.09,
+  "adx": 29.8,
+  "rsi": 64.6,
+  "free_usdt": 0.527,
+  "free_crypto": 0.736845,
+  "next_bet_usdt": 0.52,
+  "position_usd": 52.36,
+  "total_usd": 52.89,
+  "has_position": true,
+  "entry_price": 71.26,
+  "entry_time": "2026-11-26T02:39:33.538000+00:00",
+  "entry_size": 0.729441,
+  "entry_cost_usdt": 51.98,
+  "highest_price": 71.26,
+  "trailing_active": false,
+  "stop_loss_price": 66.98,
+  "stop_loss_pct": 6.0,
+  "profit_pct": -0.28,
+  "profit_usdt": -0.15,
+  "status": "TARTÁS",
+  "status_detail": "0.73 SOL (~52.36 USD) | Eredmény: -0.28% | SL: $66.98",
+  "adx_min": 14,
+  "rsi_max": 72,
+  "manual_buys": [],
+  "recent_trades": [
+    {
+      "order_id": 11016007675960246,
+      "side": "BUY",
+      "source": "BOT",
+      "price": 71.26,
+      "size": 0.729441,
+      "cost_usdt": 51.98,
+      "time": "2026-11-26T02:39:33.538000+00:00"
+    },
+    {
+      "order_id": 11016007675960238,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.24,
+      "size": 0.73,
+      "cost_usdt": 52.01,
+      "time": "2026-11-26T02:39:24.705000+00:00"
+    },
+    {
+      "order_id": 11016007675960226,
+      "side": "BUY",
+      "source": "BOT",
+      "price": 71.23,
+      "size": 0.729468,
+      "cost_usdt": 51.96,
+      "time": "2026-11-26T02:38:45.027000+00:00"
+    },
+    {
+      "order_id": 11016007675960217,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.22,
+      "size": 0.49,
+      "cost_usdt": 34.9,
+      "time": "2026-11-26T02:38:36.332000+00:00"
+    },
+    {
+      "order_id": 11016007675960217,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.22,
+      "size": 0.05,
+      "cost_usdt": 3.56,
+      "time": "2026-11-26T02:38:36.332000+00:00"
+    },
+    {
+      "order_id": 11016007675960217,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.22,
+      "size": 0.01,
+      "cost_usdt": 0.71,
+      "time": "2026-11-26T02:38:36.332000+00:00"
+    },
+    {
+      "order_id": 11016007675960217,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.22,
+      "size": 0.15,
+      "cost_usdt": 10.68,
+      "time": "2026-11-26T02:38:36.332000+00:00"
+    },
+    {
+      "order_id": 11016007675960217,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.22,
+      "size": 0.01,
+      "cost_usdt": 0.71,
+      "time": "2026-11-26T02:38:36.332000+00:00"
+    },
+    {
+      "order_id": 11016007675960217,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.22,
+      "size": 0.02,
+      "cost_usdt": 1.42,
+      "time": "2026-11-26T02:38:36.332000+00:00"
+    },
+    {
+      "order_id": 11016007675960178,
+      "side": "BUY",
+      "source": "BOT",
+      "price": 71.25,
+      "size": 0.729684,
+      "cost_usdt": 51.99,
+      "time": "2026-11-26T02:37:47.989000+00:00"
+    },
+    {
+      "order_id": 11016007675960176,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.24,
+      "size": 0.73,
+      "cost_usdt": 52.01,
+      "time": "2026-11-26T02:37:46.943000+00:00"
+    },
+    {
+      "order_id": 11016007675960138,
+      "side": "BUY",
+      "source": "BOT",
+      "price": 71.26,
+      "size": 0.739545,
+      "cost_usdt": 52.7,
+      "time": "2026-11-26T02:36:59.502000+00:00"
+    },
+    {
+      "order_id": 11016007675960135,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.25,
+      "size": 0.74,
+      "cost_usdt": 52.73,
+      "time": "2026-11-26T02:36:58.524000+00:00"
+    },
+    {
+      "order_id": 11016007675960011,
+      "side": "BUY",
+      "source": "BOT",
+      "price": 71.34,
+      "size": 0.739557,
+      "cost_usdt": 52.76,
+      "time": "2026-11-26T02:36:11.070000+00:00"
+    },
+    {
+      "order_id": 11016007675960010,
+      "side": "SELL",
+      "source": "BOT",
+      "price": 71.33,
+      "size": 0.74,
+      "cost_usdt": 52.78,
+      "time": "2026-11-26T02:36:10.180000+00:00"
+    }
+  ]
+}
