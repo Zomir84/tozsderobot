@@ -8,50 +8,74 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0b1020;
+      background: #090d16;
       color: #f1f5f9;
-      padding: 16px;
-      padding-bottom: 88px;
+      padding: 14px;
+      padding-bottom: 84px;
     }
-    .wrap { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+    .wrap { max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
     .card {
-      background: #131b2e;
-      border: 1px solid rgba(148, 163, 184, 0.14);
-      border-radius: 16px;
+      background: #121827;
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      border-radius: 18px;
       padding: 16px;
     }
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .muted { color: #94a3b8; font-size: 0.85rem; }
-    .big-val { font-size: 2rem; font-weight: 800; margin-top: 4px; }
-    .med-val { font-size: 1.3rem; font-weight: 700; margin-top: 4px; }
-    .pnl-pill {
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+    .sub-box {
+      background: #0d121e;
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      border-radius: 14px;
+      padding: 12px 10px;
+    }
+    .muted { color: #94a3b8; font-size: 0.84rem; }
+    .big-val { font-size: 2.1rem; font-weight: 800; margin-top: 4px; letter-spacing: -0.02em; }
+    .med-val { font-size: 1.4rem; font-weight: 700; margin-top: 4px; }
+    .pnl-row {
       margin-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .pnl-pill {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 6px 12px;
+      padding: 5px 11px;
       border-radius: 999px;
       font-weight: 700;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
       background: rgba(148, 163, 184, 0.14);
       color: #e2e8f0;
     }
     .pnl-pos { background: rgba(34, 197, 94, 0.16); color: #22c55e; }
     .pnl-neg { background: rgba(239, 68, 68, 0.16); color: #ef4444; }
-    .view { display: none; flex-direction: column; gap: 12px; }
-    .view.active { display: flex; }
+    .realized-val { font-size: 1.15rem; font-weight: 800; color: #22c55e; margin-top: 4px; }
+    .chart-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .chart-title { font-size: 1rem; font-weight: 700; color: #f8fafc; }
+    .chart-right { font-size: 0.95rem; font-weight: 700; color: #22c55e; }
     canvas {
       width: 100%;
-      height: 240px;
-      background: #0d1426;
-      border-radius: 12px;
-      border: 1px solid rgba(148, 163, 184, 0.12);
+      height: 190px;
+      background: #0d121e;
+      border-radius: 14px;
+      border: 1px solid rgba(148, 163, 184, 0.1);
       margin-top: 10px;
+      display: block;
     }
+    .view { display: none; flex-direction: column; gap: 12px; }
+    .view.active { display: flex; }
     .trade-item {
       padding: 10px 12px;
       border-radius: 12px;
-      background: #0d1426;
+      background: #0d121e;
       border: 1px solid rgba(148, 163, 184, 0.1);
       margin-top: 8px;
       font-size: 0.88rem;
@@ -69,7 +93,7 @@
       padding: 10px 12px;
       border-radius: 10px;
       border: 1px solid rgba(148, 163, 184, 0.2);
-      background: #0d1426;
+      background: #0d121e;
       color: #f8fafc;
       font-size: 0.95rem;
     }
@@ -77,18 +101,18 @@
       margin-top: 12px;
       padding: 12px;
       border-radius: 12px;
-      background: #0d1426;
+      background: #0d121e;
       font-size: 0.92rem;
       line-height: 1.5;
     }
     .bottom-nav {
       position: fixed;
       left: 0; right: 0; bottom: 0;
-      background: #0f172a;
-      border-top: 1px solid rgba(148, 163, 184, 0.16);
+      background: #0c111d;
+      border-top: 1px solid rgba(148, 163, 184, 0.14);
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      padding: 6px;
+      padding: 6px 8px;
       gap: 4px;
     }
     .tab-btn {
@@ -96,13 +120,13 @@
       border: none;
       color: #94a3b8;
       padding: 8px 4px;
-      border-radius: 10px;
+      border-radius: 12px;
       font-size: 0.8rem;
       font-weight: 600;
       cursor: pointer;
     }
     .tab-btn.active {
-      background: rgba(96, 165, 250, 0.15);
+      background: rgba(96, 165, 250, 0.14);
       color: #60a5fa;
       font-weight: 700;
     }
@@ -110,15 +134,14 @@
 </head>
 <body>
   <div class="wrap">
-    <!-- 1. ÁTTEKINTÉS -->
+    <!-- 1. ÁTTEKINTÉS (a képernyőkép szerinti teljes elrendezés + pillanatnyi % PnL) -->
     <section id="view-overview" class="view active">
       <div class="card">
-        <div class="muted">Teljes egyenleg (SOL + szabad USDT)</div>
         <div id="total-usd" class="big-val">$0.00</div>
         <div id="status-detail" class="muted" style="margin-top: 4px;">0.0000 SOL (0.00 USDT)</div>
-
-        <div id="live-pnl-pct" class="pnl-pill">
-          Pillanatnyi pozíció: 0.00% ($0.00)
+        <div class="pnl-row">
+          <div id="live-pnl-pct" class="pnl-pill">Pillanatnyi PnL: 0.00% ($0.00)</div>
+          <div id="updated-badge" class="muted" style="font-size: 0.78rem;">—</div>
         </div>
       </div>
 
@@ -137,12 +160,35 @@
       </div>
 
       <div class="card">
-        <div class="muted">Technikai mutatók</div>
-        <div id="indicators-line" style="margin-top: 8px; font-size: 0.9rem; line-height: 1.5;">
-          MA10: — • MA30: — • RSI: — • ADX: —
+        <div style="display:flex; justify-content:space-between; align-items:baseline;">
+          <div class="chart-title">Nyereség (realizált PnL)</div>
+          <div id="realized-date" class="muted">Nap: —</div>
         </div>
-        <div id="updated-at" class="muted" style="margin-top: 8px; font-size: 0.78rem;">
-          Frissítés: —
+        <div class="grid-3">
+          <div class="sub-box">
+            <div class="muted">Napi</div>
+            <div id="pnl-daily" class="realized-val">+$0.00</div>
+          </div>
+          <div class="sub-box">
+            <div class="muted">Heti</div>
+            <div id="pnl-weekly" class="realized-val">+$0.00</div>
+          </div>
+          <div class="sub-box">
+            <div class="muted">Havi</div>
+            <div id="pnl-monthly" class="realized-val">+$0.00</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="chart-head">
+          <div class="chart-title">SOL árfolyam-alakulás</div>
+          <div id="overview-chart-price" class="chart-right">$0.00 (+0.00%)</div>
+        </div>
+        <canvas id="overviewChart" width="480" height="190"></canvas>
+        <div id="overview-minmax" class="muted" style="margin-top: 10px;">Min: — • Max: —</div>
+        <div id="indicators-line" class="muted" style="margin-top: 4px;">
+          MA10: — • MA30: — • RSI: — • ADX: —
         </div>
       </div>
     </section>
@@ -150,15 +196,15 @@
     <!-- 2. DIAGRAMOK -->
     <section id="view-charts" class="view">
       <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:baseline;">
+        <div class="chart-head">
           <div>
-            <div class="muted">SOL árfolyam-alakulás (előzmény)</div>
+            <div class="muted">Részletes árfolyam-alakulás</div>
             <div id="chart-latest-price" class="med-val">$0.00</div>
           </div>
           <div id="chart-minmax" class="muted">Min: — • Max: —</div>
         </div>
-        <canvas id="priceChart" width="520" height="240"></canvas>
-        <div id="chart-ma-info" class="muted" style="margin-top: 8px;">
+        <canvas id="priceChart" width="480" height="220"></canvas>
+        <div id="chart-ma-info" class="muted" style="margin-top: 10px;">
           MA10: — • MA30: — • RSI: — • ADX: —
         </div>
       </div>
@@ -212,9 +258,14 @@
         btn.classList.add("active");
         const targetView = document.getElementById(targetId);
         if (targetView) targetView.classList.add("active");
-        if (targetId === "view-charts") drawPriceChart();
+        drawCharts();
       });
     });
+
+    function formatSignedUsd(val) {
+      const n = Number(val || 0);
+      return `${n >= 0 ? "+" : "-"}$${Math.abs(n).toFixed(2)}`;
+    }
 
     function renderLivePnlPct(status) {
       const el = document.getElementById("live-pnl-pct");
@@ -230,28 +281,61 @@
       el.classList.remove("pnl-pos", "pnl-neg");
 
       if (!hasPos) {
-        el.textContent = "Pillanatnyi pozíció: 0.00% ($0.00)";
+        el.textContent = "Pillanatnyi PnL: 0.00% ($0.00)";
         return;
       }
 
-      const signUsdt = usdtNum >= 0 ? `+$${usdtNum.toFixed(2)}` : `-$${Math.abs(usdtNum).toFixed(2)}`;
-      el.textContent = `Pillanatnyi pozíció: ${pctText} (${signUsdt})`;
-
+      el.textContent = `Pillanatnyi PnL: ${pctText} (${formatSignedUsd(usdtNum)})`;
       if (pctNum > 0) el.classList.add("pnl-pos");
       else if (pctNum < 0) el.classList.add("pnl-neg");
     }
 
+    function renderRealizedPnl(status, history) {
+      const now = new Date();
+      const todayStr = now.toISOString().slice(0, 10);
+      document.getElementById("realized-date").textContent = `Nap: ${todayStr}`;
+
+      // Ha a status JSON tartalmaz előre kiszámolt realizált PnL mezőket, azokat használja; egyébként history-ból számol
+      let daily = status && status.realized_daily != null ? Number(status.realized_daily) : null;
+      let weekly = status && status.realized_weekly != null ? Number(status.realized_weekly) : null;
+      let monthly = status && status.realized_monthly != null ? Number(status.realized_monthly) : null;
+
+      if (daily == null || weekly == null || monthly == null) {
+        daily = 0; weekly = 0; monthly = 0;
+        const weekAgo = Date.now() - 7 * 86400000;
+        const monthAgo = Date.now() - 30 * 86400000;
+
+        for (const item of (history || [])) {
+          if (String(item.side || "").toUpperCase() === "SELL" && item.pnl_usdt != null) {
+            const pnl = Number(item.pnl_usdt) || 0;
+            const ts = Date.parse(item.time || "");
+            if (!Number.isNaN(ts)) {
+              if ((item.time || "").slice(0, 10) === todayStr) daily += pnl;
+              if (ts >= weekAgo) weekly += pnl;
+              if (ts >= monthAgo) monthly += pnl;
+            }
+          }
+        }
+      }
+
+      const dEl = document.getElementById("pnl-daily");
+      const wEl = document.getElementById("pnl-weekly");
+      const mEl = document.getElementById("pnl-monthly");
+
+      dEl.textContent = formatSignedUsd(daily);
+      wEl.textContent = formatSignedUsd(weekly);
+      mEl.textContent = formatSignedUsd(monthly);
+
+      dEl.style.color = daily >= 0 ? "#22c55e" : "#ef4444";
+      wEl.style.color = weekly >= 0 ? "#22c55e" : "#ef4444";
+      mEl.style.color = monthly >= 0 ? "#22c55e" : "#ef4444";
+    }
+
     function syncSimulatorDefaults(s) {
       if (simTouched || !s) return;
-      if (Number(s.free_crypto) > 0) {
-        document.getElementById("sim-qty").value = Number(s.free_crypto).toFixed(4);
-      }
-      if (Number(s.entry_price) > 0) {
-        document.getElementById("sim-entry").value = Number(s.entry_price).toFixed(2);
-      }
-      if (Number(s.price) > 0) {
-        document.getElementById("sim-target").value = Number(s.price).toFixed(2);
-      }
+      if (Number(s.free_crypto) > 0) document.getElementById("sim-qty").value = Number(s.free_crypto).toFixed(4);
+      if (Number(s.entry_price) > 0) document.getElementById("sim-entry").value = Number(s.entry_price).toFixed(2);
+      if (Number(s.price) > 0) document.getElementById("sim-target").value = Number(s.price).toFixed(2);
       updateSimulator();
     }
 
@@ -264,10 +348,15 @@
       const freeUsdt = Number(s.free_usdt || 0);
       const freeCrypto = Number(s.free_crypto || 0);
       const entryPrice = s.entry_price != null ? Number(s.entry_price) : null;
+      const pctNum = Number(s.profit_pct != null ? s.profit_pct : 0);
+      const pctText = s.pnl_pct_text || `${pctNum >= 0 ? "+" : ""}${pctNum.toFixed(2)}%`;
 
       document.getElementById("total-usd").textContent = `$${totalUsd.toFixed(2)}`;
       document.getElementById("status-detail").textContent =
         s.status_detail || `${freeCrypto.toFixed(4)} SOL (${(freeCrypto * price).toFixed(2)} USDT)`;
+
+      const upd = (s.updated_at || "").replace("T", " ").slice(11, 19);
+      document.getElementById("updated-badge").textContent = upd ? `${upd} UTC • ${s.status || ""}` : (s.status || "");
 
       document.getElementById("sol-price").textContent = `$${price.toFixed(2)}`;
       document.getElementById("entry-price").textContent =
@@ -281,18 +370,18 @@
       document.getElementById("chart-ma-info").textContent = indText;
       document.getElementById("chart-latest-price").textContent = `$${price.toFixed(2)}`;
 
-      document.getElementById("updated-at").textContent =
-        `Frissítés: ${s.updated_at || "—"} (${s.status || "—"})`;
+      const rightPriceEl = document.getElementById("overview-chart-price");
+      rightPriceEl.textContent = `$${price.toFixed(2)} (${pctText})`;
+      rightPriceEl.style.color = pctNum >= 0 ? "#22c55e" : "#ef4444";
 
       renderLivePnlPct(s);
+      renderRealizedPnl(s, latestHistory);
       syncSimulatorDefaults(s);
-      if (document.getElementById("view-charts").classList.contains("active")) {
-        drawPriceChart();
-      }
+      drawCharts();
     }
 
-    function drawPriceChart() {
-      const canvas = document.getElementById("priceChart");
+    function drawSingleCanvas(canvasId, minMaxId) {
+      const canvas = document.getElementById(canvasId);
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
       const w = canvas.width;
@@ -302,37 +391,34 @@
       const points = [];
       for (const row of latestHistory) {
         const px = Number(row.price);
-        if (!Number.isNaN(px) && px > 0) {
-          points.push({ price: px, time: row.time || "" });
-        }
+        if (!Number.isNaN(px) && px > 0) points.push(px);
       }
       if (latestStatus && Number(latestStatus.price) > 0) {
-        points.push({ price: Number(latestStatus.price), time: latestStatus.updated_at || "Most" });
+        points.push(Number(latestStatus.price));
       }
 
       if (points.length < 2) {
         ctx.fillStyle = "#94a3b8";
         ctx.font = "13px sans-serif";
-        ctx.fillText("Nincs elég előzményadat a grafikonhoz.", 18, h / 2);
+        ctx.fillText("Nincs elég előzményadat a grafikonhoz.", 16, h / 2);
         return;
       }
 
-      const prices = points.map((p) => p.price);
-      const minP = Math.min(...prices);
-      const maxP = Math.max(...prices);
+      const minP = Math.min(...points);
+      const maxP = Math.max(...points);
       const span = Math.max(maxP - minP, 0.01);
 
-      document.getElementById("chart-minmax").textContent =
-        `Min: $${minP.toFixed(2)} • Max: $${maxP.toFixed(2)}`;
+      const mmEl = document.getElementById(minMaxId);
+      if (mmEl) mmEl.textContent = `Min: $${minP.toFixed(2)} • Max: $${maxP.toFixed(2)}`;
 
-      const padL = 14, padR = 14, padT = 18, padB = 22;
+      const padL = 12, padR = 12, padT = 16, padB = 18;
       const plotW = w - padL - padR;
       const plotH = h - padT - padB;
 
       ctx.beginPath();
-      points.forEach((pt, idx) => {
+      points.forEach((px, idx) => {
         const x = padL + (idx / (points.length - 1)) * plotW;
-        const y = padT + (1 - (pt.price - minP) / span) * plotH;
+        const y = padT + (1 - (px - minP) / span) * plotH;
         if (idx === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       });
@@ -356,8 +442,16 @@
       }
     }
 
+    function drawCharts() {
+      drawSingleCanvas("overviewChart", "overview-minmax");
+      drawSingleCanvas("priceChart", "chart-minmax");
+    }
+
     function renderTrades(history) {
       latestHistory = Array.isArray(history) ? history : [];
+      renderRealizedPnl(latestStatus, latestHistory);
+      drawCharts();
+
       const container = document.getElementById("trades-list");
       if (!container) return;
 
@@ -373,7 +467,7 @@
         const cls = side === "BUY" ? "side-buy" : side === "SELL" ? "side-sell" : "side-hold";
         const px = item.price != null ? `$${Number(item.price).toFixed(2)}` : "—";
         const extra = item.side === "SELL"
-          ? `${Number(item.size || 0).toFixed(4)} SOL • PnL: $${Number(item.pnl_usdt || 0).toFixed(2)} (${item.reason || ""})`
+          ? `${Number(item.size || 0).toFixed(4)} SOL • PnL: ${formatSignedUsd(item.pnl_usdt || 0)} (${item.reason || ""})`
           : item.side === "BUY"
           ? `${Number(item.size || 0).toFixed(4)} SOL ($${Number(item.usdt || 0).toFixed(2)})`
           : `Egyenleg: $${Number(item.total_usd || 0).toFixed(2)}`;
@@ -408,7 +502,7 @@
       out.innerHTML = `
         <div>Költség: <b>$${cost.toFixed(2)}</b> • Érték céláron: <b>$${val.toFixed(2)}</b></div>
         <div style="margin-top:4px; color:${diff >= 0 ? "#22c55e" : "#ef4444"}; font-weight:700;">
-          Eredmény: ${diff >= 0 ? "+" : "-"}$${Math.abs(diff).toFixed(2)} (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)
+          Eredmény: ${formatSignedUsd(diff)} (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)
         </div>
       `;
     }
@@ -436,9 +530,6 @@
         if (histRes.ok) {
           const histData = await histRes.json();
           renderTrades(histData);
-          if (document.getElementById("view-charts").classList.contains("active")) {
-            drawPriceChart();
-          }
         }
       } catch (err) {
         console.error("Adatbetöltési hiba:", err);
