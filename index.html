@@ -108,71 +108,10 @@
       margin-top: 3px;
     }
 
-    .section-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 10px;
-      flex-wrap: wrap;
-    }
-
     .section-title {
       font-size: 0.95rem;
       font-weight: 700;
-    }
-
-    .controls-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
       margin-bottom: 10px;
-    }
-
-    input[type="text"],
-    textarea.json-input {
-      width: 100%;
-      background: var(--card-inner);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 8px 10px;
-      font-size: 0.85rem;
-    }
-
-    textarea.json-input {
-      min-height: 90px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 0.78rem;
-      margin-top: 8px;
-      margin-bottom: 10px;
-    }
-
-    .action-btn {
-      background: var(--card-inner);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 6px 11px;
-      font-size: 0.78rem;
-      font-weight: 600;
-      cursor: pointer;
-    }
-
-    .action-btn.active {
-      border-color: var(--blue);
-      color: #60a5fa;
-      background: rgba(59, 130, 246, 0.14);
-    }
-
-    .chart-meta {
-      display: flex;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 10px;
-      font-size: 0.76rem;
-      color: var(--muted);
     }
 
     .day-pnl-group {
@@ -190,7 +129,7 @@
       padding: 10px 12px;
       background: rgba(30, 41, 59, 0.65);
       font-weight: 700;
-      font-size: 0.88rem;
+      font-size: 0.9rem;
       gap: 8px;
     }
 
@@ -225,7 +164,7 @@
     }
 
     .trade-excluded {
-      opacity: 0.75;
+      opacity: 0.72;
     }
 
     .notice-box {
@@ -236,23 +175,6 @@
       padding: 12px;
       font-size: 0.84rem;
       margin-bottom: 12px;
-    }
-
-    .ladder-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 12px;
-      padding: 10px 12px;
-    }
-
-    .ladder-grid ul {
-      margin-top: 6px;
-      padding-left: 18px;
-      font-size: 0.8rem;
-    }
-
-    .ladder-grid li {
-      margin-bottom: 3px;
     }
 
     canvas {
@@ -334,7 +256,7 @@
       <div class="card">
         <div class="kpi-label">SOL ár</div>
         <div class="kpi-value" id="solPrice">-</div>
-        <div class="kpi-sub" id="entrySub">Bekerülés: nincs nyitott pozíció</div>
+        <div class="kpi-sub" id="entrySub">Bekerülés: -</div>
       </div>
       <div class="card">
         <div class="kpi-label">Szabad USDT / SOL</div>
@@ -346,43 +268,16 @@
 
   <section id="tab-charts" class="tab-view">
     <div class="card">
-      <div class="section-header">
-        <div class="section-title">SOL árfolyam- és portfólió-trend</div>
-        <div class="controls-row" style="margin-bottom: 0;">
-          <button id="mode-price-btn" type="button" class="action-btn active" onclick="setChartMode('price')">SOL ár ($)</button>
-          <button id="mode-portfolio-btn" type="button" class="action-btn" onclick="setChartMode('portfolio')">Portfólió ($)</button>
-        </div>
-      </div>
+      <div class="section-title">SOL árfolyam-trend</div>
       <canvas id="trend-ladder-canvas" width="680" height="280"></canvas>
-      <div id="chart-summary-bar" class="chart-meta"></div>
     </div>
   </section>
 
   <section id="tab-trades" class="tab-view">
-    <div id="buy-ladder-card" class="card" style="display: none;">
-      <div class="section-title">Befektetett összegek (BUY) és eladási lépcsők</div>
-      <div id="buy-ladder-panel"></div>
-    </div>
-
     <div class="card">
-      <div class="section-title">Kötések, naplópontok és napi PnL</div>
+      <div class="section-title">Kötések és napi PnL</div>
       <div id="trades-tab-content"></div>
     </div>
-
-    <details class="card">
-      <summary class="section-title" style="cursor: pointer; margin-bottom: 0;">Adatforrás és kézi JSON (haladó)</summary>
-      <div style="margin-top: 12px;">
-        <div class="controls-row">
-          <input id="custom-endpoint-input" type="text" value="./pionex_status.json" placeholder="Pl. ./pionex_status.json vagy ./pionex_history.json" />
-        </div>
-        <div class="controls-row">
-          <button type="button" class="action-btn" onclick="loadFromCustomEndpoint()">Forrás betöltése</button>
-          <button type="button" class="action-btn" onclick="loadRealTradesFromKnownSources()">Pionex fájlok betöltése</button>
-          <button type="button" class="action-btn" onclick="renderRealTradesFromTextarea()">JSON alkalmazása</button>
-        </div>
-        <textarea id="real-trades-json-input" class="json-input" placeholder="Ide illesztheted a robot valós JSON kimenetét..."></textarea>
-      </div>
-    </details>
   </section>
 
   <section id="tab-sim" class="tab-view">
@@ -417,8 +312,7 @@
 
   <script>
     let latestRealPayload = null;
-    let latestRealTrades = [];
-    let currentChartMode = "price";
+    let latestRealEntries = [];
 
     function switchTab(tabName, btnElement) {
       document.querySelectorAll(".tab-view").forEach((el) => el.classList.remove("active"));
@@ -427,29 +321,13 @@
       if (target) target.classList.add("active");
       if (btnElement) btnElement.classList.add("active");
       if (tabName === "charts") {
-        renderTrendChartWithBuysAndSellLadders("trend-ladder-canvas", latestRealPayload, latestRealTrades, currentChartMode);
+        renderTrendChart("trend-ladder-canvas", latestRealPayload, latestRealEntries);
       }
-    }
-
-    function setChartMode(mode) {
-      currentChartMode = mode === "portfolio" ? "portfolio" : "price";
-      const priceBtn = document.getElementById("mode-price-btn");
-      const portBtn = document.getElementById("mode-portfolio-btn");
-      if (priceBtn) priceBtn.classList.toggle("active", currentChartMode === "price");
-      if (portBtn) portBtn.classList.toggle("active", currentChartMode === "portfolio");
-      renderTrendChartWithBuysAndSellLadders("trend-ladder-canvas", latestRealPayload, latestRealTrades, currentChartMode);
     }
 
     function getEntryTime(obj) {
       if (!obj || typeof obj !== "object") return null;
       return obj.time || obj.updated_at || obj.timestamp || obj.created_at || obj.date || null;
-    }
-
-    function formatShortTime(rawTime) {
-      if (!rawTime) return "";
-      const d = new Date(rawTime);
-      if (Number.isNaN(d.getTime())) return String(rawTime).slice(0, 16);
-      return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
     }
 
     function getEntrySize(entry) {
@@ -511,7 +389,7 @@
       return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
     }
 
-    function extractRealTradesArray(payload) {
+    function extractEntriesArray(payload) {
       if (Array.isArray(payload)) return payload;
       if (!payload || typeof payload !== "object") return null;
       if (Array.isArray(payload.recent_trades) && payload.recent_trades.length > 0) return payload.recent_trades;
@@ -525,141 +403,31 @@
       return null;
     }
 
-    function extractSeriesPoints(payload, entries, mode = "price") {
+    function extractPricePoints(payload, entries) {
       const pts = [];
       const list = Array.isArray(entries) ? entries : [];
 
       for (const item of list) {
         if (!item || typeof item !== "object") continue;
-        const val =
-          mode === "portfolio"
-            ? typeof item.total_usd === "number" && Number.isFinite(item.total_usd)
-              ? item.total_usd
-              : NaN
-            : typeof item.price === "number" && Number.isFinite(item.price) && item.price > 0
+        const p =
+          typeof item.price === "number" && Number.isFinite(item.price) && item.price > 0
             ? item.price
             : typeof item.fill_price === "number" && Number.isFinite(item.fill_price) && item.fill_price > 0
             ? item.fill_price
             : NaN;
-
-        if (Number.isFinite(val)) {
-          pts.push({
-            timestamp: getEntryTime(item),
-            value: val,
-            side: item.side ? String(item.side).toUpperCase() : null,
-            label: item.side ? `${item.side} $${val.toFixed(2)}` : null,
-          });
+        if (Number.isFinite(p)) {
+          pts.push({ timestamp: getEntryTime(item), price: p });
         }
       }
 
-      if (payload && typeof payload === "object") {
-        const latestVal =
-          mode === "portfolio"
-            ? typeof payload.total_usd === "number" && Number.isFinite(payload.total_usd)
-              ? payload.total_usd
-              : NaN
-            : typeof payload.price === "number" && Number.isFinite(payload.price) && payload.price > 0
-            ? payload.price
-            : NaN;
-
-        if (Number.isFinite(latestVal)) {
-          const lastPt = pts.length > 0 ? pts[pts.length - 1] : null;
-          if (!lastPt || lastPt.timestamp !== getEntryTime(payload) || lastPt.value !== latestVal) {
-            pts.push({
-              timestamp: getEntryTime(payload),
-              value: latestVal,
-              side: null,
-              label: null,
-            });
-          }
+      if (payload && typeof payload === "object" && typeof payload.price === "number" && Number.isFinite(payload.price) && payload.price > 0) {
+        const last = pts.length > 0 ? pts[pts.length - 1] : null;
+        if (!last || last.price !== payload.price) {
+          pts.push({ timestamp: getEntryTime(payload), price: payload.price });
         }
       }
 
       return pts;
-    }
-
-    function buildBuyInvestmentsAndSellLadders(entries, options = {}) {
-      const upStepsPct =
-        Array.isArray(options.upStepsPct) && options.upStepsPct.length > 0
-          ? options.upStepsPct
-          : [1.0, 2.0, 3.5];
-      const downtrendStepsPct =
-        Array.isArray(options.downtrendStepsPct) && options.downtrendStepsPct.length > 0
-          ? options.downtrendStepsPct
-          : [-0.8, -1.6, -2.5];
-
-      const buys = [];
-      let totalInvestedUsdt = 0;
-      let totalBoughtSol = 0;
-
-      if (!Array.isArray(entries)) {
-        return { buys: [], activeSellLevels: [], downtrendSellLevels: [], totalInvestedUsdt: 0, totalBoughtSol: 0 };
-      }
-
-      for (const entry of entries) {
-        if (!entry || typeof entry !== "object") continue;
-        if (String(entry.side || entry.action || "").toUpperCase() !== "BUY") continue;
-
-        const rawTime = getEntryTime(entry);
-        const parsedDate = rawTime ? new Date(rawTime) : null;
-        const timestampMs = parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.getTime() : null;
-        const localTime = timestampMs ? new Date(timestampMs).toLocaleString("hu-HU") : "Ismeretlen időpont";
-
-        const solAmount = getEntrySize(entry);
-        let usdtAmount = getEntryUsdt(entry);
-        let buyPrice =
-          typeof entry.price === "number" && Number.isFinite(entry.price) && entry.price > 0
-            ? entry.price
-            : typeof entry.fill_price === "number" && Number.isFinite(entry.fill_price) && entry.fill_price > 0
-            ? entry.fill_price
-            : 0;
-
-        if (buyPrice <= 0 && usdtAmount > 0 && solAmount > 0) buyPrice = usdtAmount / solAmount;
-        if (usdtAmount <= 0 && buyPrice > 0 && solAmount > 0) usdtAmount = buyPrice * solAmount;
-        if (buyPrice <= 0 && usdtAmount <= 0 && solAmount <= 0) continue;
-
-        totalInvestedUsdt = Number((totalInvestedUsdt + usdtAmount).toFixed(4));
-        totalBoughtSol = Number((totalBoughtSol + solAmount).toFixed(6));
-
-        const sellLadderUp =
-          buyPrice > 0
-            ? upStepsPct.map((pct, idx) => ({
-                stepIndex: idx + 1,
-                pct,
-                targetPrice: Number((buyPrice * (1 + pct / 100)).toFixed(4)),
-              }))
-            : [];
-
-        const sellLadderDowntrend =
-          buyPrice > 0
-            ? downtrendStepsPct.map((pct, idx) => ({
-                stepIndex: idx + 1,
-                pct,
-                targetPrice: Number((buyPrice * (1 + pct / 100)).toFixed(4)),
-              }))
-            : [];
-
-        buys.push({
-          timestampMs: timestampMs ?? 0,
-          localTime,
-          buyPrice: Number(buyPrice.toFixed(4)),
-          solAmount: Number(solAmount.toFixed(6)),
-          usdtAmount: Number(usdtAmount.toFixed(4)),
-          sellLadderUp,
-          sellLadderDowntrend,
-        });
-      }
-
-      buys.sort((a, b) => a.timestampMs - b.timestampMs);
-      const latestBuy = buys.length > 0 ? buys[buys.length - 1] : null;
-
-      return {
-        buys,
-        activeSellLevels: latestBuy ? latestBuy.sellLadderUp : [],
-        downtrendSellLevels: latestBuy ? latestBuy.sellLadderDowntrend : [],
-        totalInvestedUsdt,
-        totalBoughtSol,
-      };
     }
 
     function updateSim() {
@@ -669,94 +437,16 @@
       if (!slider || !priceEl || !totalEl) return;
 
       const simPrice = Number(slider.value) || 0;
-      const ladder = buildBuyInvestmentsAndSellLadders(latestRealTrades);
       const solQty =
-        ladder.totalBoughtSol > 0
-          ? ladder.totalBoughtSol
-          : latestRealPayload && typeof latestRealPayload.free_crypto === "number"
+        latestRealPayload && typeof latestRealPayload.free_crypto === "number"
           ? latestRealPayload.free_crypto
           : 0;
       priceEl.textContent = `$${simPrice.toFixed(2)}`;
       totalEl.textContent = `$${(solQty * simPrice).toFixed(2)}`;
     }
 
-    function renderBuyInvestmentsAndSellLadders(entries, containerId = "buy-ladder-panel", options = {}) {
-      const card = document.getElementById("buy-ladder-card");
-      const container = document.getElementById(containerId);
-      if (!container) return;
-
-      const summary = buildBuyInvestmentsAndSellLadders(entries, options);
-      if (summary.buys.length === 0) {
-        if (card) card.style.display = "none";
-        container.innerHTML = "";
-        return;
-      }
-
-      if (card) card.style.display = "block";
-
-      const buysRowsHtml = summary.buys
-        .map((b, idx) => {
-          const upText = b.sellLadderUp.map((s) => `+${s.pct}% → $${s.targetPrice.toFixed(4)}`).join(" | ");
-          const downText = b.sellLadderDowntrend.map((s) => `${s.pct}% → $${s.targetPrice.toFixed(4)}`).join(" | ");
-          return `
-            <tr>
-              <td>#${idx + 1}</td>
-              <td>${b.localTime}</td>
-              <td>$${b.buyPrice.toFixed(4)}</td>
-              <td>${b.solAmount.toFixed(4)} SOL</td>
-              <td>$${b.usdtAmount.toFixed(2)}</td>
-              <td>${upText || "-"}</td>
-              <td>${downText || "-"}</td>
-            </tr>
-          `;
-        })
-        .join("");
-
-      const activeUpHtml = summary.activeSellLevels
-        .map((s) => `<li>Lépcső ${s.stepIndex} (<strong>+${s.pct}%</strong>): <strong>$${s.targetPrice.toFixed(4)}</strong></li>`)
-        .join("");
-
-      const activeDownHtml = summary.downtrendSellLevels
-        .map((s) => `<li>Csökkenő ${s.stepIndex} (<strong>${s.pct}%</strong>): <strong>$${s.targetPrice.toFixed(4)}</strong></li>`)
-        .join("");
-
-      container.innerHTML = `
-        <div class="day-pnl-group">
-          <div class="day-pnl-header">
-            <span>Befektetett összesen: $${summary.totalInvestedUsdt.toFixed(2)} (${summary.totalBoughtSol.toFixed(4)} SOL)</span>
-            <span>Vétel: ${summary.buys.length} db</span>
-          </div>
-          <div class="ladder-grid">
-            <div>
-              <strong>Emelkedő eladási lépcsők</strong>
-              <ul>${activeUpHtml || "<li>Nincs adat</li>"}</ul>
-            </div>
-            <div>
-              <strong>Csökkenő trendbeli eladási lépcsők</strong>
-              <ul>${activeDownHtml || "<li>Nincs adat</li>"}</ul>
-            </div>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Időpont</th>
-                <th>Vételi ár</th>
-                <th>Mennyiség</th>
-                <th>Befektetett</th>
-                <th>Emelkedő lépcsők</th>
-                <th>Csökkenő lépcsők</th>
-              </tr>
-            </thead>
-            <tbody>${buysRowsHtml}</tbody>
-          </table>
-        </div>
-      `;
-    }
-
-    function renderTrendChartWithBuysAndSellLadders(canvasId, payload, entries, mode = "price") {
+    function renderTrendChart(canvasId, payload, entries) {
       const canvas = document.getElementById(canvasId);
-      const summaryBar = document.getElementById("chart-summary-bar");
       if (!canvas || typeof canvas.getContext !== "function") return;
       const ctx = canvas.getContext("2d");
       const width = canvas.width;
@@ -766,139 +456,45 @@
       ctx.fillStyle = "#0f172a";
       ctx.fillRect(0, 0, width, height);
 
-      const pts = extractSeriesPoints(payload, entries, mode);
+      const pts = extractPricePoints(payload, entries);
       if (pts.length === 0) {
         ctx.fillStyle = "#94a3b8";
         ctx.font = "13px system-ui, sans-serif";
         ctx.fillText("Nincs elegendő valós árpont a grafikonhoz.", 16, 32);
-        if (summaryBar) summaryBar.textContent = "";
         return;
       }
 
-      const values = pts.map((p) => p.value);
-      const minV = Math.min(...values);
-      const maxV = Math.max(...values);
-      const avgV = values.reduce((acc, v) => acc + v, 0) / values.length;
-      const firstV = values[0];
-      const lastV = values[values.length - 1];
-      const deltaPct = firstV > 0 ? ((lastV - firstV) / firstV) * 100 : 0;
+      const prices = pts.map((p) => p.price);
+      const minP = Math.min(...prices);
+      const maxP = Math.max(...prices);
+      const padX = 52;
+      const padY = 24;
+      const plotW = Math.max(10, width - padX * 2);
+      const plotH = Math.max(10, height - padY * 2);
+      const spanP = maxP - minP > 0 ? maxP - minP : Math.max(0.01, maxP * 0.02);
 
-      const padX = 58;
-      const padTop = 22;
-      const padBottom = 34;
-      const plotW = Math.max(10, width - padX - 18);
-      const plotH = Math.max(10, height - padTop - padBottom);
-      const rawSpan = maxV - minV;
-      const margin = rawSpan > 0 ? rawSpan * 0.12 : Math.max(0.05, maxV * 0.01);
-      const lo = minV - margin;
-      const hi = maxV + margin;
-      const span = Math.max(0.0001, hi - lo);
+      const toY = (price) => padY + plotH - ((price - minP) / spanP) * plotH;
+      const toX = (idx, total) => (total <= 1 ? padX + plotW / 2 : padX + (idx / (total - 1)) * plotW);
 
-      const toX = (i) => (pts.length <= 1 ? padX + plotW / 2 : padX + (i / (pts.length - 1)) * plotW);
-      const toY = (v) => padTop + plotH - ((v - lo) / span) * plotH;
-
-      // Vízszintes rácsvonalak és Y tengely
       ctx.save();
-      ctx.strokeStyle = "rgba(148, 163, 184, 0.14)";
-      ctx.lineWidth = 1;
+      ctx.fillStyle = "#94a3b8";
       ctx.font = "11px ui-monospace, monospace";
-      ctx.fillStyle = "#94a3b8";
-      const ticks = 4;
-      for (let t = 0; t <= ticks; t++) {
-        const tv = lo + (span * t) / ticks;
-        const ty = toY(tv);
-        ctx.beginPath();
-        ctx.moveTo(padX, ty);
-        ctx.lineTo(padX + plotW, ty);
-        ctx.stroke();
-        ctx.fillText(`$${tv.toFixed(2)}`, 6, ty + 4);
-      }
+      ctx.fillText(`$${maxP.toFixed(2)}`, 8, padY + 4);
+      ctx.fillText(`$${minP.toFixed(2)}`, 8, padY + plotH);
       ctx.restore();
 
-      // Átlagvonal
-      const avgY = toY(avgV);
       ctx.save();
-      ctx.strokeStyle = "rgba(148, 163, 184, 0.45)";
-      ctx.setLineDash([4, 4]);
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = "#38bdf8";
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(padX, avgY);
-      ctx.lineTo(padX + plotW, avgY);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = "#94a3b8";
-      ctx.font = "10px ui-monospace, monospace";
-      ctx.fillText(`Átlag $${avgV.toFixed(2)}`, padX + 6, avgY - 4);
-      ctx.restore();
-
-      // Területkitöltés és fő trendvonal
-      const lineColor = deltaPct >= 0 ? "#10b981" : "#38bdf8";
-      ctx.save();
-      const grad = ctx.createLinearGradient(0, padTop, 0, padTop + plotH);
-      grad.addColorStop(0, deltaPct >= 0 ? "rgba(16, 185, 129, 0.24)" : "rgba(56, 189, 248, 0.24)");
-      grad.addColorStop(1, "rgba(15, 23, 42, 0.0)");
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.moveTo(toX(0), padTop + plotH);
-      pts.forEach((p, i) => ctx.lineTo(toX(i), toY(p.value)));
-      ctx.lineTo(toX(pts.length - 1), padTop + plotH);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.strokeStyle = lineColor;
-      ctx.lineWidth = 2.2;
-      ctx.beginPath();
-      pts.forEach((p, i) => {
-        const x = toX(i);
-        const y = toY(p.value);
-        if (i === 0) ctx.moveTo(x, y);
+      pts.forEach((pt, idx) => {
+        const x = toX(idx, pts.length);
+        const y = toY(pt.price);
+        if (idx === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       });
       ctx.stroke();
       ctx.restore();
-
-      // Pontok és SELL jelölés
-      pts.forEach((p, i) => {
-        const x = toX(i);
-        const y = toY(p.value);
-        const isSell = p.side === "SELL";
-        const isLast = i === pts.length - 1;
-        if (isSell || isLast) {
-          ctx.save();
-          ctx.fillStyle = isSell ? "#ef4444" : "#f8fafc";
-          ctx.beginPath();
-          ctx.arc(x, y, isSell ? 5 : 4, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.font = "10px ui-monospace, monospace";
-          ctx.fillText(
-            isSell ? `SELL $${p.value.toFixed(2)}` : `$${p.value.toFixed(2)}`,
-            Math.min(x + 6, width - 85),
-            Math.max(y - 6, padTop + 10)
-          );
-          ctx.restore();
-        }
-      });
-
-      // X tengely időpontjai
-      const startLabel = formatShortTime(pts[0].timestamp);
-      const endLabel = formatShortTime(pts[pts.length - 1].timestamp);
-      ctx.save();
-      ctx.fillStyle = "#94a3b8";
-      ctx.font = "11px ui-monospace, monospace";
-      if (startLabel) ctx.fillText(startLabel, padX, height - 10);
-      if (endLabel && pts.length > 1) {
-        const w = ctx.measureText(endLabel).width;
-        ctx.fillText(endLabel, Math.max(padX, padX + plotW - w), height - 10);
-      }
-      ctx.restore();
-
-      if (summaryBar) {
-        const sign = deltaPct >= 0 ? "+" : "";
-        summaryBar.innerHTML = `
-          <span>Min: <strong>$${minV.toFixed(2)}</strong> • Max: <strong>$${maxV.toFixed(2)}</strong></span>
-          <span>Változás: <strong class="${deltaPct >= 0 ? "pnl-profit" : "pnl-deficit"}">${sign}${deltaPct.toFixed(2)}%</strong> (${pts.length} pont)</span>
-        `;
-      }
     }
 
     function renderRealTradesTab(entries, sourceName = "ismeretlen forrás", containerId = "trades-tab-content") {
@@ -1059,14 +655,10 @@
       if (typeof price === "number" && solPriceEl) {
         solPriceEl.textContent = `$${price.toFixed(2)}`;
       }
-
       if (payload && typeof payload.entry_price === "number" && entrySubEl) {
         entrySubEl.textContent = `Bekerülés: $${payload.entry_price.toFixed(2)}`;
       } else if (entrySubEl) {
-        const lastSell = [...list].reverse().find((e) => e && String(e.side || "").toUpperCase() === "SELL" && typeof e.price === "number");
-        entrySubEl.textContent = lastSell
-          ? `Nincs nyitott vétel • Utolsó SELL: $${lastSell.price.toFixed(2)}`
-          : "Bekerülés: nincs nyitott pozíció";
+        entrySubEl.textContent = "Bekerülés: -";
       }
 
       const detailText =
@@ -1085,18 +677,16 @@
 
     function refreshAllRobotViews(payload, sourceName = "valós forrás") {
       latestRealPayload = payload;
-      latestRealTrades = extractRealTradesArray(payload) || [];
+      latestRealEntries = extractEntriesArray(payload) || [];
 
-      updateOverviewFromPayload(payload, latestRealTrades);
-      renderRealTradesTab(latestRealTrades, sourceName, "trades-tab-content");
-      renderBuyInvestmentsAndSellLadders(latestRealTrades, "buy-ladder-panel");
-      renderTrendChartWithBuysAndSellLadders("trend-ladder-canvas", latestRealPayload, latestRealTrades, currentChartMode);
+      updateOverviewFromPayload(payload, latestRealEntries);
+      renderRealTradesTab(latestRealEntries, sourceName, "trades-tab-content");
+      renderTrendChart("trend-ladder-canvas", latestRealPayload, latestRealEntries);
       updateSim();
     }
 
     async function loadPionexRealFiles() {
       const container = document.getElementById("trades-tab-content");
-      const textarea = document.getElementById("real-trades-json-input");
       const updatedText = document.getElementById("updatedText");
 
       let statusData = null;
@@ -1122,89 +712,22 @@
         return false;
       }
 
-      const tradesFromHistory = extractRealTradesArray(historyData) || [];
-      const tradesFromStatus = extractRealTradesArray(statusData) || [];
-      const mergedTrades = tradesFromHistory.length > 0 ? tradesFromHistory : tradesFromStatus;
+      const entriesFromHistory = extractEntriesArray(historyData) || [];
+      const entriesFromStatus = extractEntriesArray(statusData) || [];
+      const mergedEntries = entriesFromHistory.length > 0 ? entriesFromHistory : entriesFromStatus;
 
       const combinedPayload = {
         ...(typeof historyData === "object" && !Array.isArray(historyData) ? historyData : {}),
         ...(typeof statusData === "object" && !Array.isArray(statusData) ? statusData : {}),
-        recent_trades: mergedTrades,
+        recent_trades: mergedEntries,
       };
-
-      if (textarea) {
-        textarea.value = JSON.stringify(combinedPayload, null, 2);
-      }
 
       refreshAllRobotViews(combinedPayload, "pionex_status.json + pionex_history.json");
       return true;
     }
 
-    async function loadRealTradesFromUrl(url) {
-      const container = document.getElementById("trades-tab-content");
-      const textarea = document.getElementById("real-trades-json-input");
-
-      try {
-        const response = await fetch(url, { cache: "no-store" });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-        const trades = extractRealTradesArray(data);
-        if (!trades) throw new Error("Nincs felismerhető lista a JSON-ban.");
-
-        if (textarea) textarea.value = JSON.stringify(data, null, 2);
-        refreshAllRobotViews(data, url);
-        return true;
-      } catch (err) {
-        if (container) {
-          container.innerHTML = `<div class="notice-box"><strong>Betöltési hiba (${url}):</strong> ${err.message}</div>`;
-        }
-        refreshAllRobotViews({}, url);
-        return false;
-      }
-    }
-
-    async function loadFromCustomEndpoint() {
-      const input = document.getElementById("custom-endpoint-input");
-      const url = input ? input.value.trim() : "";
-      if (url) await loadRealTradesFromUrl(url);
-    }
-
-    async function loadRealTradesFromKnownSources() {
-      const loadedPionex = await loadPionexRealFiles();
-      if (loadedPionex) return;
-
-      const candidates = ["./pionex_history.json", "./pionex_status.json", "./trades.json", "/api/trades", "/api/state"];
-      for (const candidate of candidates) {
-        const ok = await loadRealTradesFromUrl(candidate);
-        if (ok) return;
-      }
-    }
-
-    function renderRealTradesFromTextarea() {
-      const textarea = document.getElementById("real-trades-json-input");
-      const container = document.getElementById("trades-tab-content");
-      if (!textarea || !container) return;
-
-      const raw = textarea.value.trim();
-      if (!raw) {
-        container.innerHTML = `<div class="notice-box"><strong>Üres a JSON mező:</strong> Illeszd be a valós adatokat.</div>`;
-        return;
-      }
-
-      try {
-        const parsed = JSON.parse(raw);
-        if (!extractRealTradesArray(parsed)) {
-          container.innerHTML = `<div class="notice-box"><strong>Eltérő JSON szerkezet:</strong> Tömb vagy <code>recent_trades</code> / <code>trades</code> lista szükséges.</div>`;
-          return;
-        }
-        refreshAllRobotViews(parsed, "kézi valós JSON");
-      } catch (err) {
-        container.innerHTML = `<div class="notice-box"><strong>Hibás JSON:</strong> ${err.message}</div>`;
-      }
-    }
-
     document.addEventListener("DOMContentLoaded", () => {
-      loadRealTradesFromKnownSources();
+      loadPionexRealFiles();
       updateSim();
     });
   </script>
