@@ -535,7 +535,6 @@
 
       const toY = (val) => padT + (1 - (val - minP) / span) * plotH;
 
-      // Finom vízszintes rács + jobb oldali ártengely
       ctx.font = "10px -apple-system, sans-serif";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
@@ -584,7 +583,6 @@
         drawLevelLine(lv.stopLoss, "#ef4444", "Stop-Loss");
       }
 
-      // Árfolyamvonal
       ctx.beginPath();
       points.forEach((px, idx) => {
         const x = padL + (idx / (points.length - 1)) * plotW;
@@ -596,7 +594,6 @@
       ctx.lineWidth = 2.2;
       ctx.stroke();
 
-      // Utolsó pont jelölése
       const lastX = padL + plotW;
       const lastY = toY(points[points.length - 1]);
       ctx.fillStyle = "#22c55e";
@@ -629,9 +626,26 @@
         const side = (item.side || item.status || "INFO").toUpperCase();
         const cls = side === "BUY" ? "side-buy" : side === "SELL" ? "side-sell" : "side-hold";
         const px = item.price != null ? `$${Number(item.price).toFixed(2)}` : "—";
-        const extra = item.side === "SELL"
-          ? `${Number(item.size || 0).toFixed(4)} SOL • PnL: ${formatSignedUsd(item.pnl_usdt || 0)} (${item.reason || ""})`
-          : item.side === "BUY"
+
+        let pnlDisplay = formatSignedUsd(item.pnl_usdt || 0);
+        if (side === "SELL") {
+          const sz = Number(item.size || 0);
+          const sellPx = Number(item.price || 0);
+          const pctMatch = String(item.reason || "").match(/([+-]?\d+(?:[.,]\d+)?)\s*%/);
+          if (pctMatch && sz > 0 && sellPx > 0) {
+            const pctVal = Number(pctMatch[1].replace(",", "."));
+            const denom = 1 + pctVal / 100;
+            if (denom > 0) {
+              const impliedEntry = sellPx / denom;
+              const derivedPnl = (sellPx - impliedEntry) * sz;
+              pnlDisplay = formatSignedUsd(derivedPnl);
+            }
+          }
+        }
+
+        const extra = side === "SELL"
+          ? `${Number(item.size || 0).toFixed(4)} SOL • PnL: ${pnlDisplay} (${item.reason || ""})`
+          : side === "BUY"
           ? `${Number(item.size || 0).toFixed(4)} SOL ($${Number(item.usdt || 0).toFixed(2)})`
           : `Egyenleg: $${Number(item.total_usd || 0).toFixed(2)}`;
 
