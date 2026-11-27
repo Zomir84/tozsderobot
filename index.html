@@ -137,6 +137,40 @@
       color: var(--muted);
     }
 
+    .alloc-bar-wrap {
+      background: var(--card-inner);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    .alloc-bar {
+      height: 14px;
+      border-radius: 999px;
+      overflow: hidden;
+      display: flex;
+      background: #1e293b;
+      margin-bottom: 10px;
+    }
+
+    .alloc-usdt {
+      background: var(--blue);
+      height: 100%;
+    }
+
+    .alloc-sol {
+      background: var(--green);
+      height: 100%;
+    }
+
+    .alloc-legend {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: 0.8rem;
+    }
+
     .day-pnl-group {
       background: var(--card-inner);
       border: 1px solid var(--border);
@@ -301,11 +335,28 @@
   <section id="tab-charts" class="tab-view">
     <div class="card">
       <div class="chart-head">
-        <div class="section-title">SOL árfolyam-trend</div>
-        <div id="chartsDelta" class="chart-delta pnl-neutral">-</div>
+        <div class="section-title">Portfólió egyenleg alakulása (USD)</div>
+        <div id="portfolioDelta" class="chart-delta pnl-neutral">-</div>
       </div>
-      <canvas id="trend-ladder-canvas" width="680" height="280"></canvas>
-      <div id="chartsChartStats" class="chart-stats"></div>
+      <canvas id="portfolio-chart-canvas" width="680" height="210"></canvas>
+      <div id="portfolioChartStats" class="chart-stats"></div>
+    </div>
+
+    <div class="card">
+      <div class="chart-head">
+        <div class="section-title">Eszközmegoszlás (USDT vs. SOL)</div>
+        <div id="allocSummaryRight" class="kpi-sub">-</div>
+      </div>
+      <div id="allocation-panel" class="alloc-bar-wrap"></div>
+    </div>
+
+    <div class="card">
+      <div class="chart-head">
+        <div class="section-title">Realizált PnL bontás (USD)</div>
+        <div id="pnlTotalBadge" class="chart-delta pnl-neutral">-</div>
+      </div>
+      <canvas id="pnl-bar-canvas" width="680" height="200"></canvas>
+      <div id="pnlChartStats" class="chart-stats"></div>
     </div>
   </section>
 
@@ -364,7 +415,7 @@
       if (tabName === "overview") {
         renderTrendChart("overview-trend-canvas", "overviewDelta", "overviewChartStats", latestRealPayload, latestRealEntries);
       } else if (tabName === "charts") {
-        renderTrendChart("trend-ladder-canvas", "chartsDelta", "chartsChartStats", latestRealPayload, latestRealEntries);
+        renderChartsTab(latestRealPayload, latestRealEntries);
       }
     }
 
@@ -482,6 +533,27 @@
             price: payload.price,
             side: null,
           });
+        }
+      }
+
+      return pts;
+    }
+
+    function extractPortfolioPoints(payload, entries) {
+      const pts = [];
+      const list = Array.isArray(entries) ? entries : [];
+
+      for (const item of list) {
+        if (!item || typeof item !== "object") continue;
+        if (typeof item.total_usd === "number" && Number.isFinite(item.total_usd) && item.total_usd > 0) {
+          pts.push({ timestamp: getEntryTime(item), value: item.total_usd });
+        }
+      }
+
+      if (payload && typeof payload === "object" && typeof payload.total_usd === "number" && Number.isFinite(payload.total_usd) && payload.total_usd > 0) {
+        const last = pts.length > 0 ? pts[pts.length - 1] : null;
+        if (!last || last.value !== payload.total_usd || last.timestamp !== getEntryTime(payload)) {
+          pts.push({ timestamp: getEntryTime(payload), value: payload.total_usd });
         }
       }
 
@@ -672,6 +744,242 @@
           <span>${indParts.length > 0 ? indParts.join(" • ") : `${pts.length} pont`}</span>
         `;
       }
+    }
+
+    function renderPortfolioChart(payload, entries) {
+      const canvas = document.getElementById("portfolio-chart-canvas");
+      const deltaEl = document.getElementById("portfolioDelta");
+      const statsEl = document.getElementById("portfolioChartStats");
+      if (!canvas || typeof canvas.getContext !== "function") return;
+      const ctx = canvas.getContext("2d");
+      const width = canvas.width;
+      const height = canvas.height;
+
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = "#0f172a";
+      ctx.fillRect(0, 0, width, height);
+
+      const pts = extractPortfolioPoints(payload, entries);
+      if (pts.length === 0) {
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "13px system-ui, sans-serif";
+        ctx.fillText("Nincs portfólió-idősor a megjelenítéshez.", 16, 32);
+        if (deltaEl) deltaEl.textContent = "-";
+        if (statsEl) statsEl.textContent = "";
+        return;
+      }
+
+      const vals = pts.map((p) => p.value);
+      const minV = Math.min(...vals);
+      const maxV = Math.max(...vals);
+      const lastV = vals[vals.length - 1];
+      const firstV = vals[0];
+      const diffUsd = lastV - firstV;
+
+      if (deltaEl) {
+        const sign = diffUsd > 0 ? "+" : diffUsd < 0 ? "-" : "";
+        deltaEl.textContent = `$${lastV.toFixed(2)} (${sign}$${Math.abs(diffUsd).toFixed(2)})`;
+        deltaEl.className = `chart-delta ${diffUsd > 0 ? "pnl-profit" : diffUsd < 0 ? "pnl-deficit" : "pnl-neutral"}`;
+      }
+
+      const padLeft = 56;
+      const padRight = 18;
+      const padTop = 18;
+      const padBottom = 28;
+      const plotW = Math.max(10, width - padLeft - padRight);
+      const plotH = Math.max(10, height - padTop - padBottom);
+      const rawSpan = maxV - minV;
+      const padVal = rawSpan > 0 ? rawSpan * 0.15 : Math.max(0.5, maxV * 0.03);
+      const lo = Math.max(0, minV - padVal);
+      const hi = maxV + padVal;
+      const span = Math.max(0.01, hi - lo);
+
+      const toX = (i) => (pts.length <= 1 ? padLeft + plotW / 2 : padLeft + (i / (pts.length - 1)) * plotW);
+      const toY = (v) => padTop + plotH - ((v - lo) / span) * plotH;
+
+      ctx.save();
+      ctx.strokeStyle = "rgba(148, 163, 184, 0.13)";
+      ctx.font = "11px ui-monospace, monospace";
+      ctx.fillStyle = "#94a3b8";
+      for (let r = 0; r <= 3; r++) {
+        const v = lo + (span * r) / 3;
+        const y = toY(v);
+        ctx.beginPath();
+        ctx.moveTo(padLeft, y);
+        ctx.lineTo(padLeft + plotW, y);
+        ctx.stroke();
+        ctx.fillText(`$${v.toFixed(2)}`, 6, y + 4);
+      }
+      ctx.restore();
+
+      ctx.save();
+      ctx.strokeStyle = "#818cf8";
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      pts.forEach((p, i) => {
+        const x = toX(i);
+        const y = toY(p.value);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      ctx.restore();
+
+      const startTxt = formatTimeLabel(pts[0].timestamp);
+      const endTxt = formatTimeLabel(pts[pts.length - 1].timestamp);
+      ctx.save();
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "10px ui-monospace, monospace";
+      if (startTxt) ctx.fillText(startTxt, padLeft, height - 8);
+      if (endTxt && pts.length > 1) {
+        const w = ctx.measureText(endTxt).width;
+        ctx.fillText(endTxt, Math.max(padLeft, padLeft + plotW - w), height - 8);
+      }
+      ctx.restore();
+
+      if (statsEl) {
+        statsEl.innerHTML = `
+          <span>Min: <strong>$${minV.toFixed(2)}</strong> • Max: <strong>$${maxV.toFixed(2)}</strong></span>
+          <span>Minták: <strong>${pts.length}</strong></span>
+        `;
+      }
+    }
+
+    function renderAllocationPanel(payload) {
+      const panel = document.getElementById("allocation-panel");
+      const rightEl = document.getElementById("allocSummaryRight");
+      if (!panel) return;
+
+      const freeUsdt = payload && typeof payload.free_usdt === "number" && Number.isFinite(payload.free_usdt) ? payload.free_usdt : 0;
+      const freeCrypto = payload && typeof payload.free_crypto === "number" && Number.isFinite(payload.free_crypto) ? payload.free_crypto : 0;
+      const price = payload && typeof payload.price === "number" && Number.isFinite(payload.price) ? payload.price : 0;
+      const solUsd =
+        payload && typeof payload.position_usd === "number" && Number.isFinite(payload.position_usd)
+          ? payload.position_usd
+          : freeCrypto * price;
+      const total = freeUsdt + solUsd;
+
+      const usdtPct = total > 0 ? (freeUsdt / total) * 100 : 0;
+      const solPct = total > 0 ? (solUsd / total) * 100 : 0;
+
+      if (rightEl) {
+        rightEl.textContent = total > 0 ? `Összesen: $${total.toFixed(2)}` : "-";
+      }
+
+      panel.innerHTML = `
+        <div class="alloc-bar">
+          <div class="alloc-usdt" style="width: ${usdtPct.toFixed(1)}%;"></div>
+          <div class="alloc-sol" style="width: ${solPct.toFixed(1)}%;"></div>
+        </div>
+        <div class="alloc-legend">
+          <span><strong style="color: var(--blue);">USDT:</strong> $${freeUsdt.toFixed(2)} (${usdtPct.toFixed(1)}%)</span>
+          <span><strong style="color: var(--green);">SOL (${freeCrypto.toFixed(4)}):</strong> $${solUsd.toFixed(2)} (${solPct.toFixed(1)}%)</span>
+        </div>
+      `;
+    }
+
+    function renderPnlBarChart(entries) {
+      const canvas = document.getElementById("pnl-bar-canvas");
+      const badgeEl = document.getElementById("pnlTotalBadge");
+      const statsEl = document.getElementById("pnlChartStats");
+      if (!canvas || typeof canvas.getContext !== "function") return;
+      const ctx = canvas.getContext("2d");
+      const width = canvas.width;
+      const height = canvas.height;
+
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = "#0f172a";
+      ctx.fillRect(0, 0, width, height);
+
+      const list = Array.isArray(entries) ? entries : [];
+      const pnlItems = [];
+      let totalCleanPnl = 0;
+
+      for (const entry of list) {
+        if (!entry || typeof entry !== "object") continue;
+        const pnl = getEntryPnl(entry);
+        if (!Number.isFinite(pnl)) continue;
+        const largeSell = isLargeLegacySell(entry);
+        if (!largeSell) {
+          totalCleanPnl = Number((totalCleanPnl + pnl).toFixed(4));
+        }
+        const rawT = getEntryTime(entry);
+        const label = rawT ? formatTimeLabel(rawT).slice(5) : entry.side || "PnL";
+        pnlItems.push({ label, pnl, excluded: largeSell });
+      }
+
+      if (badgeEl) {
+        const sign = totalCleanPnl > 0 ? "+" : totalCleanPnl < 0 ? "-" : "";
+        badgeEl.textContent = `${sign}$${Math.abs(totalCleanPnl).toFixed(2)}`;
+        badgeEl.className = `chart-delta ${totalCleanPnl > 0 ? "pnl-profit" : totalCleanPnl < 0 ? "pnl-deficit" : "pnl-neutral"}`;
+      }
+
+      if (pnlItems.length === 0) {
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "13px system-ui, sans-serif";
+        ctx.fillText("Nincs PnL-adat a naplóban.", 16, 32);
+        if (statsEl) statsEl.textContent = "";
+        return;
+      }
+
+      const maxAbs = Math.max(1, ...pnlItems.map((x) => Math.abs(x.pnl)));
+      const padLeft = 56;
+      const padRight = 18;
+      const padTop = 20;
+      const padBottom = 30;
+      const plotW = Math.max(10, width - padLeft - padRight);
+      const plotH = Math.max(10, height - padTop - padBottom);
+      const zeroY = padTop + plotH * 0.5;
+
+      ctx.save();
+      ctx.strokeStyle = "rgba(148, 163, 184, 0.25)";
+      ctx.beginPath();
+      ctx.moveTo(padLeft, zeroY);
+      ctx.lineTo(padLeft + plotW, zeroY);
+      ctx.stroke();
+
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "10px ui-monospace, monospace";
+      ctx.fillText(`+$${maxAbs.toFixed(1)}`, 6, padTop + 8);
+      ctx.fillText("$0.00", 12, zeroY + 4);
+      ctx.fillText(`-$${maxAbs.toFixed(1)}`, 6, padTop + plotH);
+
+      const slotW = plotW / pnlItems.length;
+      const barW = Math.min(44, Math.max(12, slotW * 0.45));
+
+      pnlItems.forEach((item, idx) => {
+        const cx = padLeft + slotW * (idx + 0.5);
+        const h = (Math.abs(item.pnl) / maxAbs) * (plotH * 0.42);
+        const y = item.pnl >= 0 ? zeroY - h : zeroY;
+
+        ctx.fillStyle = item.excluded ? "#64748b" : item.pnl >= 0 ? "#10b981" : "#ef4444";
+        ctx.fillRect(cx - barW / 2, y, barW, Math.max(2, h));
+
+        ctx.fillStyle = "#f8fafc";
+        ctx.font = "10px ui-monospace, monospace";
+        const pSign = item.pnl >= 0 ? "+" : "-";
+        const pText = `${pSign}$${Math.abs(item.pnl).toFixed(2)}`;
+        const tw = ctx.measureText(pText).width;
+        ctx.fillText(pText, cx - tw / 2, item.pnl >= 0 ? y - 5 : y + Math.max(2, h) + 12);
+
+        ctx.fillStyle = "#94a3b8";
+        const lw = ctx.measureText(item.label).width;
+        ctx.fillText(item.label, cx - lw / 2, height - 8);
+      });
+      ctx.restore();
+
+      if (statsEl) {
+        statsEl.innerHTML = `
+          <span>Tiszta realizált PnL: <strong>${totalCleanPnl >= 0 ? "+" : "-"}$${Math.abs(totalCleanPnl).toFixed(2)}</strong></span>
+          <span>Tételek: <strong>${pnlItems.length}</strong></span>
+        `;
+      }
+    }
+
+    function renderChartsTab(payload, entries) {
+      renderPortfolioChart(payload, entries);
+      renderAllocationPanel(payload);
+      renderPnlBarChart(entries);
     }
 
     function renderRealTradesTab(entries, sourceName = "ismeretlen forrás", containerId = "trades-tab-content") {
@@ -870,7 +1178,7 @@
       updateOverviewFromPayload(payload, latestRealEntries);
       renderRealTradesTab(latestRealEntries, sourceName, "trades-tab-content");
       renderTrendChart("overview-trend-canvas", "overviewDelta", "overviewChartStats", latestRealPayload, latestRealEntries);
-      renderTrendChart("trend-ladder-canvas", "chartsDelta", "chartsChartStats", latestRealPayload, latestRealEntries);
+      renderChartsTab(latestRealPayload, latestRealEntries);
       updateSim();
     }
 
