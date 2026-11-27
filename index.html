@@ -20,6 +20,25 @@
       border-radius: 18px;
       padding: 16px;
     }
+    .top-card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .refresh-btn {
+      background: #1a243b;
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      color: #e2e8f0;
+      border-radius: 11px;
+      padding: 7px 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .refresh-btn:hover { background: #23304e; }
+    .refresh-btn:disabled { opacity: 0.6; cursor: default; }
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
     .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
     .sub-box {
@@ -161,8 +180,13 @@
     <!-- 1. ÁTTEKINTÉS -->
     <section id="view-overview" class="view active">
       <div class="card">
-        <div id="total-usd" class="big-val">$0.00</div>
-        <div id="status-detail" class="muted" style="margin-top: 4px;">0.0000 SOL (0.00 USDT)</div>
+        <div class="top-card-head">
+          <div>
+            <div id="total-usd" class="big-val">$0.00</div>
+            <div id="status-detail" class="muted" style="margin-top: 4px;">0.0000 SOL (0.00 USDT)</div>
+          </div>
+          <button id="refresh-btn" type="button" class="refresh-btn">Frissítés</button>
+        </div>
         <div class="pnl-row">
           <div id="live-pnl-pct" class="pnl-pill">Pillanatnyi PnL: 0.00% ($0.00)</div>
           <div id="updated-badge" class="muted" style="font-size: 0.78rem;">—</div>
@@ -693,6 +717,11 @@
     window.addEventListener("resize", drawCharts);
 
     async function loadAll() {
+      const btn = document.getElementById("refresh-btn");
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Frissítés...";
+      }
       try {
         const [stRes, histRes] = await Promise.all([
           fetch(`./pionex_status.json?t=${Date.now()}`, { cache: "no-store" }),
@@ -708,7 +737,17 @@
         }
       } catch (err) {
         console.error("Adatbetöltési hiba:", err);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "Frissítés";
+        }
       }
+    }
+
+    const refreshBtn = document.getElementById("refresh-btn");
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", loadAll);
     }
 
     updateSimulator();
