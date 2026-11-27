@@ -1,808 +1,904 @@
-import hashlib
-import hmac
-import json
-import math
-import os
-import subprocess
-import time
-import urllib.parse
-import urllib.request
-from datetime import datetime, timezone
-from pathlib import Path
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pionex SOL Robot</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #090d16;
+      color: #f1f5f9;
+      padding: 14px;
+      padding-bottom: 84px;
+    }
+    .wrap { max-width: 540px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+    .card {
+      background: #121827;
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      border-radius: 18px;
+      padding: 16px;
+    }
+    .top-card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .refresh-btn {
+      background: #1a243b;
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      color: #e2e8f0;
+      border-radius: 11px;
+      padding: 7px 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .refresh-btn:hover { background: #23304e; }
+    .refresh-btn:disabled { opacity: 0.6; cursor: default; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+    .sub-box {
+      background: #0d121e;
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      border-radius: 14px;
+      padding: 12px 10px;
+    }
+    .muted { color: #94a3b8; font-size: 0.84rem; }
+    .big-val { font-size: 2.1rem; font-weight: 800; margin-top: 4px; letter-spacing: -0.02em; }
+    .med-val { font-size: 1.4rem; font-weight: 700; margin-top: 4px; }
+    .pnl-row {
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .pnl-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 11px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 0.9rem;
+      background: rgba(148, 163, 184, 0.14);
+      color: #e2e8f0;
+    }
+    .pnl-pos { background: rgba(34, 197, 94, 0.16); color: #22c55e; }
+    .pnl-neg { background: rgba(239, 68, 68, 0.16); color: #ef4444; }
+    .realized-val { font-size: 1.15rem; font-weight: 800; color: #22c55e; margin-top: 4px; }
+    .chart-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .chart-title { font-size: 1rem; font-weight: 700; color: #f8fafc; }
+    .chart-right { font-size: 0.95rem; font-weight: 700; color: #22c55e; }
+    canvas {
+      width: 100%;
+      height: 230px;
+      background: #0b101b;
+      border-radius: 14px;
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      margin-top: 10px;
+      display: block;
+    }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      margin-top: 10px;
+      font-size: 0.78rem;
+      color: #cbd5e1;
+    }
+    .leg-item { display: inline-flex; align-items: center; gap: 6px; }
+    .leg-dot { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
+    .levels-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .lvl-chip {
+      background: #0d121e;
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      border-radius: 12px;
+      padding: 9px 11px;
+      font-size: 0.8rem;
+    }
+    .lvl-chip b { display: block; font-size: 0.92rem; margin-top: 2px; }
+    .view { display: none; flex-direction: column; gap: 12px; }
+    .view.active { display: flex; }
+    .trade-item {
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: #0d121e;
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      margin-top: 8px;
+      font-size: 0.88rem;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .side-buy { color: #22c55e; font-weight: 700; }
+    .side-sell { color: #f59e0b; font-weight: 700; }
+    .side-hold { color: #60a5fa; font-weight: 700; }
+    label { display: block; font-size: 0.85rem; color: #cbd5e1; margin-top: 10px; }
+    input {
+      width: 100%;
+      margin-top: 4px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      background: #0d121e;
+      color: #f8fafc;
+      font-size: 0.95rem;
+    }
+    .sim-box {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 12px;
+      background: #0d121e;
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+    .bottom-nav {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      background: #0c111d;
+      border-top: 1px solid rgba(148, 163, 184, 0.14);
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      padding: 6px 8px;
+      gap: 4px;
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      padding: 8px 4px;
+      border-radius: 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .tab-btn.active {
+      background: rgba(96, 165, 250, 0.14);
+      color: #60a5fa;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section id="view-overview" class="view active">
+      <div class="card">
+        <div class="top-card-head">
+          <div>
+            <div id="total-usd" class="big-val">$0.00</div>
+            <div id="status-detail" class="muted" style="margin-top: 4px;">0.0000 SOL (0.00 USDT)</div>
+          </div>
+          <button id="refresh-btn" type="button" class="refresh-btn">Frissítés</button>
+        </div>
+        <div class="pnl-row">
+          <div id="live-pnl-pct" class="pnl-pill">Pillanatnyi PnL: 0.00% ($0.00)</div>
+          <div id="updated-badge" class="muted" style="font-size: 0.78rem;">—</div>
+        </div>
+      </div>
 
-BASE_DIR = Path(__file__).resolve().parent
+      <div class="grid-2">
+        <div class="card">
+          <div class="muted">SOL ár</div>
+          <div id="sol-price" class="med-val">$0.00</div>
+          <div id="entry-price" class="muted" style="margin-top: 4px;">Bekerülés: —</div>
+        </div>
 
-SYMBOL = os.getenv("SYMBOL", "SOLUSDT")
-PIONEX_SYMBOL = os.getenv("PIONEX_SYMBOL", "SOL_USDT")
-BASE_COIN = os.getenv("BASE_COIN", "SOL")
-QUOTE_COIN = os.getenv("QUOTE_COIN", "USDT")
-YAHOO_SYMBOL = os.getenv("YAHOO_SYMBOL", "SOL-USD")
+        <div class="card">
+          <div class="muted">Szabad USDT / SOL</div>
+          <div id="free-usdt" class="med-val">$0.00</div>
+          <div id="free-sol" class="muted" style="margin-top: 4px;">0.0000 SOL</div>
+        </div>
+      </div>
 
-PIONEX_BASE_URL = os.getenv("PIONEX_BASE_URL", "https://api.pionex.com").rstrip("/")
-PIONEX_API_KEY = os.getenv("PIONEX_API_KEY", "").strip()
-PIONEX_API_SECRET = os.getenv("PIONEX_API_SECRET", "").strip()
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:baseline;">
+          <div class="chart-title">Nyereség (realizált PnL)</div>
+          <div id="realized-date" class="muted">Nap: —</div>
+        </div>
+        <div class="grid-3">
+          <div class="sub-box">
+            <div class="muted">Napi</div>
+            <div id="pnl-daily" class="realized-val">+$0.00</div>
+          </div>
+          <div class="sub-box">
+            <div class="muted">Heti</div>
+            <div id="pnl-weekly" class="realized-val">+$0.00</div>
+          </div>
+          <div class="sub-box">
+            <div class="muted">Havi</div>
+            <div id="pnl-monthly" class="realized-val">+$0.00</div>
+          </div>
+        </div>
+      </div>
 
-LIVE_TRADING_ENABLED = os.getenv("LIVE_TRADING_ENABLED", "0").strip() in ("1", "true", "yes", "on")
-ORDER_AMOUNT_USDT = float(os.getenv("ORDER_AMOUNT_USDT", "15.0"))
-MIN_ORDER_USDT = float(os.getenv("MIN_ORDER_USDT", "5.0"))
-MIN_POSITION_CRYPTO = float(os.getenv("MIN_POSITION_CRYPTO", "0.01"))
-DEFAULT_ADOPT_ENTRY_PRICE = float(os.getenv("DEFAULT_ADOPT_ENTRY_PRICE", "70.03"))
-ZERO_POSITION_CONFIRM_CYCLES = int(os.getenv("ZERO_POSITION_CONFIRM_CYCLES", "3"))
+      <div class="card">
+        <div class="chart-head">
+          <div class="chart-title">SOL árfolyam és kilépési szintek</div>
+          <div id="overview-chart-price" class="chart-right">$0.00 (+0.00%)</div>
+        </div>
+        <canvas id="overviewChart"></canvas>
+        <div class="legend">
+          <span class="leg-item"><i class="leg-dot" style="background:#22c55e;"></i>Árfolyam</span>
+          <span class="leg-item"><i class="leg-dot" style="background:#60a5fa;"></i>Bekerülés</span>
+          <span class="leg-item"><i class="leg-dot" style="background:#fbbf24;"></i>Trailing start (+1.5%)</span>
+          <span class="leg-item"><i class="leg-dot" style="background:#f97316;"></i>Trailing stop (-0.8%)</span>
+          <span class="leg-item"><i class="leg-dot" style="background:#ef4444;"></i>Stop-Loss (-5.0%)</span>
+        </div>
+        <div id="overview-minmax" class="muted" style="margin-top: 10px;">Min: — • Max: —</div>
+        <div id="indicators-line" class="muted" style="margin-top: 4px;">
+          MA10: — • MA30: — • RSI: — • ADX: —
+        </div>
+      </div>
+    </section>
 
-CYCLE_SECONDS = int(os.getenv("CYCLE_SECONDS", "45"))
-GIT_SYNC_SECONDS = int(os.getenv("GIT_SYNC_SECONDS", "120"))
-ALERT_COOLDOWN_SECONDS = int(os.getenv("ALERT_COOLDOWN_SECONDS", "600"))
-BUY_COOLDOWN_SECONDS = int(os.getenv("BUY_COOLDOWN_SECONDS", "900"))
-SELL_COOLDOWN_SECONDS = int(os.getenv("SELL_COOLDOWN_SECONDS", "900"))
+    <section id="view-charts" class="view">
+      <div class="card">
+        <div class="chart-head">
+          <div>
+            <div class="muted">Kezdőtőke ($55.00), visszaforgatás (50%) és zseb (50%)</div>
+            <div id="capital-pnl-headline" class="med-val">+$0.00 (0.00%)</div>
+          </div>
+          <div id="capital-minmax" class="muted">Kezdőtőke: $55.00</div>
+        </div>
+        <canvas id="capitalChart"></canvas>
+        <div class="legend">
+          <span class="leg-item"><i class="leg-dot" style="background:#22c55e;"></i>$55.00 felett (nyereség)</span>
+          <span class="leg-item"><i class="leg-dot" style="background:#ef4444;"></i>$55.00 alatt (veszteség)</span>
+          <span class="leg-item"><i class="leg-dot" style="background:#60a5fa;"></i>Kezdőtőke ($55.00)</span>
+        </div>
+        <div id="capital-summary-box" class="levels-grid"></div>
+      </div>
+    </section>
 
-ADX_MIN = float(os.getenv("ADX_MIN", "20"))
-RSI_MAX = float(os.getenv("RSI_MAX", "70"))
-STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", "5.0"))
-TRAILING_START_PCT = float(os.getenv("TRAILING_START_PCT", "1.5"))
-TRAILING_CALLBACK_PCT = float(os.getenv("TRAILING_CALLBACK_PCT", "0.8"))
+    <section id="view-trades" class="view">
+      <div class="card">
+        <div class="muted">Előzmények és kötések (pionex_history.json)</div>
+        <div id="trades-list" style="margin-top: 6px;">
+          <div class="muted" style="margin-top: 8px;">Betöltés...</div>
+        </div>
+      </div>
+    </section>
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    <section id="view-sim" class="view">
+      <div class="card">
+        <div class="muted">Pozíció szimulátor (bekerülési ár vs. célár)</div>
+        <label for="sim-qty">SOL mennyiség</label>
+        <input id="sim-qty" type="number" step="0.0001" value="0.7345" />
 
-STATUS_FILE = BASE_DIR / os.getenv("STATUS_FILE", "pionex_status.json")
-STATE_FILE = BASE_DIR / os.getenv("STATE_FILE", "robot_runtime_state.json")
-HISTORY_FILE = BASE_DIR / os.getenv("HISTORY_FILE", "pionex_history.json")
+        <label for="sim-entry">Bekerülési ár (USD)</label>
+        <input id="sim-entry" type="number" step="0.01" value="70.03" />
 
+        <label for="sim-target">Célár / aktuális ár (USD)</label>
+        <input id="sim-target" type="number" step="0.01" value="72.05" />
 
-def utc_now():
-    return datetime.now(timezone.utc)
+        <div id="sim-result" class="sim-box"></div>
+      </div>
+    </section>
+  </div>
 
+  <nav class="bottom-nav">
+    <button class="tab-btn active" data-tab="view-overview">Áttekintés</button>
+    <button class="tab-btn" data-tab="view-charts">Diagramok</button>
+    <button class="tab-btn" data-tab="view-trades">Kötések</button>
+    <button class="tab-btn" data-tab="view-sim">Szimulátor</button>
+  </nav>
 
-def load_json_safe(path, default):
-    p = Path(path)
-    if not p.exists():
-        return default
-    try:
-        with p.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(default, dict):
-            return data if isinstance(data, dict) else default
-        if isinstance(default, list):
-            return data if isinstance(data, list) else default
-        return data
-    except Exception:
-        return default
+  <script>
+    const START_CAPITAL_USD = 55.0;
+    let latestStatus = null;
+    let latestHistory = [];
+    let simTouched = false;
 
+    document.querySelectorAll(".tab-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const targetId = btn.getAttribute("data-tab");
+        document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+        document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
+        btn.classList.add("active");
+        const targetView = document.getElementById(targetId);
+        if (targetView) targetView.classList.add("active");
+        drawCharts();
+      });
+    });
 
-def save_json_atomic(path, data):
-    p = Path(path)
-    tmp = p.with_suffix(p.suffix + ".tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2, allow_nan=False)
-    os.replace(tmp, p)
+    function formatSignedUsd(val) {
+      const n = Number(val || 0);
+      return `${n >= 0 ? "+" : "-"}$${Math.abs(n).toFixed(2)}`;
+    }
 
-
-def append_history_event(event):
-    history = load_json_safe(HISTORY_FILE, [])
-    history.append(event)
-    save_json_atomic(HISTORY_FILE, history[-200:])
-
-
-def send_throttled_telegram(runtime_state, alert_key, message, now_ts, cooldown_seconds=ALERT_COOLDOWN_SECONDS):
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        return False
-
-    alert_map = runtime_state.setdefault("alert_timestamps", {})
-    last_sent = float(alert_map.get(alert_key) or 0.0)
-    if now_ts - last_sent < cooldown_seconds:
-        return False
-
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = json.dumps(
-        {
-            "chat_id": TELEGRAM_CHAT_ID,
-            "text": f"[{SYMBOL}] {message}",
+    function getItemPnlUsd(item) {
+      const sz = Number(item && item.size ? item.size : 0);
+      const sellPx = Number(item && item.price ? item.price : 0);
+      const pctMatch = String((item && item.reason) || "").match(/([+-]?\d+(?:[.,]\d+)?)\s*%/);
+      if (pctMatch && sz > 0 && sellPx > 0) {
+        const pctVal = Number(pctMatch[1].replace(",", "."));
+        const denom = 1 + pctVal / 100;
+        if (denom > 0) {
+          const impliedEntry = sellPx / denom;
+          return (sellPx - impliedEntry) * sz;
         }
-    ).encode("utf-8")
-
-    try:
-        req = urllib.request.Request(
-            url,
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            ok = resp.status == 200
-        if ok:
-            alert_map[alert_key] = now_ts
-        return ok
-    except Exception as exc:
-        print(f"[TG] Küldési hiba ({alert_key}): {exc}")
-        return False
-
-
-def _sma(values, period):
-    if len(values) < period or period <= 0:
-        return None
-    return round(sum(values[-period:]) / period, 4)
-
-
-def _rsi(closes, period=14):
-    if len(closes) < period + 1:
-        return None
-    gains = [max(closes[i] - closes[i - 1], 0.0) for i in range(1, len(closes))]
-    losses = [max(closes[i - 1] - closes[i], 0.0) for i in range(1, len(closes))]
-    avg_g = sum(gains[:period]) / period
-    avg_l = sum(losses[:period]) / period
-    for i in range(period, len(gains)):
-        avg_g = (avg_g * (period - 1) + gains[i]) / period
-        avg_l = (avg_l * (period - 1) + losses[i]) / period
-    if avg_l == 0:
-        return 100.0 if avg_g > 0 else 50.0
-    return round(100.0 - (100.0 / (1.0 + (avg_g / avg_l))), 2)
-
-
-def _adx(highs, lows, closes, period=14):
-    n = len(closes)
-    if n < period * 2 + 1 or not (len(highs) == len(lows) == n):
-        return None
-    tr_l, pdm_l, mdm_l = [], [], []
-    for i in range(1, n):
-        up = highs[i] - highs[i - 1]
-        dn = lows[i - 1] - lows[i]
-        pdm_l.append(up if (up > dn and up > 0) else 0.0)
-        mdm_l.append(dn if (dn > up and dn > 0) else 0.0)
-        tr_l.append(
-            max(
-                highs[i] - lows[i],
-                abs(highs[i] - closes[i - 1]),
-                abs(lows[i] - closes[i - 1]),
-            )
-        )
-    atr = sum(tr_l[:period])
-    pdm = sum(pdm_l[:period])
-    mdm = sum(mdm_l[:period])
-
-    def dx(a, p_v, m_v):
-        if a <= 0 or (p_v + m_v) <= 0:
-            return 0.0
-        pdi = 100.0 * p_v / a
-        mdi = 100.0 * m_v / a
-        return 100.0 * abs(pdi - mdi) / (pdi + mdi)
-
-    dxs = [dx(atr, pdm, mdm)]
-    for i in range(period, len(tr_l)):
-        atr = atr - atr / period + tr_l[i]
-        pdm = pdm - pdm / period + pdm_l[i]
-        mdm = mdm - mdm / period + mdm_l[i]
-        dxs.append(dx(atr, pdm, mdm))
-    if len(dxs) < period:
-        return None
-    val = sum(dxs[:period]) / period
-    for i in range(period, len(dxs)):
-        val = (val * (period - 1) + dxs[i]) / period
-    return None if (math.isnan(val) or math.isinf(val)) else round(val, 2)
-
-
-def _fetch_yahoo_candles(symbol_yf=YAHOO_SYMBOL, range_str="5d", interval_str="15m"):
-    url = (
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol_yf}"
-        f"?range={range_str}&interval={interval_str}"
-    )
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        payload = json.loads(resp.read().decode("utf-8"))
-    res = ((payload.get("chart") or {}).get("result") or [None])[0]
-    if not res:
-        return None
-    q = (((res.get("indicators") or {}).get("quote") or [{}])[0])
-    h_r, l_r, c_r = q.get("high") or [], q.get("low") or [], q.get("close") or []
-    highs, lows, closes = [], [], []
-    for h, l, c in zip(h_r, l_r, c_r):
-        if h is not None and l is not None and c is not None:
-            highs.append(float(h))
-            lows.append(float(l))
-            closes.append(float(c))
-    return (highs, lows, closes) if len(closes) >= 35 else None
-
-
-def fetch_indicators_safe(runtime_state, previous_status, now_ts):
-    last_ind = runtime_state.get("last_indicators") or {}
-    fb = {
-        k: previous_status.get(k, last_ind.get(k))
-        for k in ["yf_price", "ma5", "ma15", "ma10", "ma30", "adx", "rsi"]
+      }
+      return Number(item && item.pnl_usdt != null ? item.pnl_usdt : 0);
     }
-    try:
-        candles = _fetch_yahoo_candles()
-        if not candles:
-            return fb
-        highs, lows, closes = candles
-        return {
-            "yf_price": round(closes[-1], 4),
-            "ma5": _sma(closes, 5) if _sma(closes, 5) is not None else fb["ma5"],
-            "ma15": _sma(closes, 15) if _sma(closes, 15) is not None else fb["ma15"],
-            "ma10": _sma(closes, 10) if _sma(closes, 10) is not None else fb["ma10"],
-            "ma30": _sma(closes, 30) if _sma(closes, 30) is not None else fb["ma30"],
-            "adx": _adx(highs, lows, closes, 14) if _adx(highs, lows, closes, 14) is not None else fb["adx"],
-            "rsi": _rsi(closes, 14) if _rsi(closes, 14) is not None else fb["rsi"],
+
+    function computeExitLevels(s) {
+      if (!s || !s.has_position || !Number(s.entry_price)) {
+        return null;
+      }
+      const entry = Number(s.entry_price);
+      const price = Number(s.price || entry);
+      const high = Math.max(Number(s.highest_price || entry), price);
+      const slPct = Number(s.stop_loss_pct || 5.0);
+      const trailStartPct = 1.5;
+      const trailCbPct = 0.8;
+
+      const stopLoss = s.stop_loss_price != null ? Number(s.stop_loss_price) : entry * (1 - slPct / 100);
+      const trailStart = entry * (1 + trailStartPct / 100);
+      const trailingActive = Boolean(s.trailing_active) || price >= trailStart || high >= trailStart;
+      const trailingStop = high * (1 - trailCbPct / 100);
+
+      return {
+        entry,
+        high,
+        stopLoss,
+        trailStart,
+        trailingActive,
+        trailingStop,
+        slPct,
+        trailStartPct,
+        trailCbPct,
+      };
+    }
+
+    function computeCapitalCurve(status, history) {
+      const currentTotal = status && Number(status.total_usd) > 0 ? Number(status.total_usd) : 0;
+      const rows = Array.isArray(history) ? history : [];
+      const startCapital = START_CAPITAL_USD;
+
+      const curve = [Number(startCapital.toFixed(2))];
+      let runningUsd = startCapital;
+      let positiveRealizedSum = 0;
+
+      for (const row of rows) {
+        const side = String(row && row.side || "").toUpperCase();
+        if (side === "SELL") {
+          const pnl = getItemPnlUsd(row);
+          if (pnl > 0) positiveRealizedSum += pnl;
+          runningUsd += pnl;
+          curve.push(Number(Math.max(0, runningUsd).toFixed(2)));
+        } else if (row && row.total_usd != null && Number(row.total_usd) > 0) {
+          runningUsd = Number(row.total_usd);
+          curve.push(Number(runningUsd.toFixed(2)));
         }
-    except Exception as exc:
-        print(f"[IND] Figyelmeztetés (korábbi értékek megtartva): {exc}")
-        send_throttled_telegram(runtime_state, "ind_error", f"Indikátor hiba: {exc}", now_ts)
-        return fb
+      }
 
-
-def _pionex_signed_request(method, path, params=None, body_obj=None):
-    if not PIONEX_API_KEY or not PIONEX_API_SECRET:
-        raise RuntimeError("Hiányzik a PIONEX_API_KEY vagy a PIONEX_API_SECRET.")
-
-    ts_ms = str(int(time.time() * 1000))
-    q_dict = dict(params or {})
-    q_dict["timestamp"] = ts_ms
-    sorted_items = sorted((k, str(v)) for k, v in q_dict.items())
-    query_str = urllib.parse.urlencode(sorted_items)
-
-    body_str = ""
-    if body_obj is not None:
-        body_str = json.dumps(body_obj, separators=(",", ":"))
-
-    sign_payload = f"{method.upper()}{path}?{query_str}{body_str}"
-    signature = hmac.new(
-        PIONEX_API_SECRET.encode("utf-8"),
-        sign_payload.encode("utf-8"),
-        hashlib.sha256,
-    ).hexdigest()
-
-    url = f"{PIONEX_BASE_URL}{path}?{query_str}"
-    data_bytes = body_str.encode("utf-8") if body_obj is not None else None
-    headers = {
-        "PIONEX-KEY": PIONEX_API_KEY,
-        "PIONEX-SIGNATURE": signature,
-        "User-Agent": "Mozilla/5.0",
-    }
-    if body_obj is not None:
-        headers["Content-Type"] = "application/json"
-
-    req = urllib.request.Request(url, data=data_bytes, headers=headers, method=method.upper())
-    with urllib.request.urlopen(req, timeout=12) as resp:
-        return json.loads(resp.read().decode("utf-8"))
-
-
-def _fetch_pionex_public_price(symbol_pair=PIONEX_SYMBOL):
-    url = f"{PIONEX_BASE_URL}/api/v1/market/tickers?symbol={symbol_pair}"
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        payload = json.loads(resp.read().decode("utf-8"))
-    tickers = ((payload.get("data") or {}).get("tickers")) or []
-    for item in tickers:
-        if item.get("symbol") == symbol_pair and item.get("close") is not None:
-            return round(float(item["close"]), 4)
-    return None
-
-
-def _fetch_pionex_balances():
-    if not PIONEX_API_KEY or not PIONEX_API_SECRET:
-        return None
-    payload = _pionex_signed_request("GET", "/api/v1/account/balances")
-    balances = ((payload.get("data") or {}).get("balances")) or []
-    free_map = {}
-    for row in balances:
-        coin = str(row.get("coin") or "").upper()
-        if coin:
-            free_map[coin] = float(row.get("free") or 0.0)
-    return free_map
-
-
-def _collect_order_fills(order_id, expected_size=None, ref_price=None):
-    if not order_id or not PIONEX_API_KEY or not PIONEX_API_SECRET:
-        return None
-    try:
-        payload = _pionex_signed_request(
-            "GET",
-            "/api/v1/trade/fills",
-            params={"symbol": PIONEX_SYMBOL, "orderId": str(order_id)},
-        )
-        fills = ((payload.get("data") or {}).get("fills")) or []
-        if not fills:
-            return None
-
-        total_qty = 0.0
-        total_quote = 0.0
-        for f in fills:
-            raw_qty = float(f.get("size") or f.get("qty") or 0.0)
-            px = float(f.get("price") or ref_price or 0.0)
-            raw_quote = float(f.get("quoteAmount") or f.get("amount") or 0.0)
-
-            if expected_size and expected_size > 0 and raw_qty > expected_size * 10 and px > 0:
-                qty = raw_qty / px
-                quote_amt = raw_qty
-            else:
-                qty = raw_qty
-                quote_amt = raw_quote if raw_quote > 0 else (qty * px)
-
-            if qty > 0:
-                total_qty += qty
-                total_quote += quote_amt if quote_amt > 0 else (qty * px)
-
-        if total_qty <= 0:
-            return None
-        avg_price = (total_quote / total_qty) if total_quote > 0 else float(ref_price or 0.0)
-        return {
-            "order_id": str(order_id),
-            "filled_qty": round(total_qty, 6),
-            "filled_usdt": round(total_quote, 2),
-            "avg_price": round(avg_price, 4),
-            "fill_count": len(fills),
+      if (currentTotal > 0) {
+        if (curve[curve.length - 1] !== Number(currentTotal.toFixed(2))) {
+          curve.push(Number(currentTotal.toFixed(2)));
         }
-    except Exception as exc:
-        print(f"[PIONEX] Részleges teljesülések lekérési hiba ({order_id}): {exc}")
-        return None
+      }
 
+      const finalTotal = currentTotal > 0 ? currentTotal : curve[curve.length - 1] || startCapital;
+      const netDiff = finalTotal - startCapital;
+      const netPct = startCapital > 0 ? (netDiff / startCapital) * 100 : 0;
+      const peakTotal = curve.length ? Math.max(...curve) : finalTotal;
+      const troughTotal = curve.length ? Math.min(...curve) : finalTotal;
 
-def _place_pionex_order(side, amount_usdt=None, size_crypto=None, price=None):
-    client_order_id = f"solbot_{int(time.time() * 1000)}"
-    body = {
-        "symbol": PIONEX_SYMBOL,
-        "side": side.upper(),
-        "type": "MARKET",
-        "clientOrderId": client_order_id,
+      const share = status && status.reinvest_share != null ? Number(status.reinvest_share) : 0.5;
+      const clampedShare = Math.max(0, Math.min(1, Number.isNaN(share) ? 0.5 : share));
+
+      const reinvestProfit =
+        status && status.reinvested_profit_usdt != null
+          ? Number(status.reinvested_profit_usdt)
+          : positiveRealizedSum * clampedShare;
+
+      const pocketProfit =
+        status && status.pocket_profit_usdt != null
+          ? Number(status.pocket_profit_usdt)
+          : positiveRealizedSum * (1 - clampedShare);
+
+      const nextBet =
+        status && status.next_bet_usdt != null
+          ? Number(status.next_bet_usdt)
+          : 15.0 + reinvestProfit;
+
+      return {
+        startCapital,
+        finalTotal,
+        netDiff,
+        netPct,
+        peakTotal,
+        troughTotal,
+        reinvestProfit,
+        pocketProfit,
+        nextBet,
+        curve,
+      };
     }
-    if side.upper() == "BUY":
-        body["amount"] = f"{float(amount_usdt):.2f}"
-    else:
-        body["size"] = f"{float(size_crypto):.4f}"
 
-    if not LIVE_TRADING_ENABLED:
-        est_price = float(price or 0.0)
-        est_size = (
-            round(float(amount_usdt) / est_price, 6)
-            if side.upper() == "BUY" and est_price > 0
-            else round(float(size_crypto or 0.0), 6)
-        )
-        est_usdt = (
-            round(float(amount_usdt or 0.0), 2)
-            if side.upper() == "BUY"
-            else round(est_size * est_price, 2)
-        )
-        return {
-            "simulated": True,
-            "order_id": f"sim_{client_order_id}",
-            "avg_price": est_price,
-            "filled_qty": est_size,
-            "filled_usdt": est_usdt,
-            "fill_count": 1,
+    function renderCapitalView(status, history) {
+      const info = computeCapitalCurve(status, history);
+      const headEl = document.getElementById("capital-pnl-headline");
+      const mmEl = document.getElementById("capital-minmax");
+      const boxEl = document.getElementById("capital-summary-box");
+
+      if (headEl) {
+        headEl.textContent = `${formatSignedUsd(info.netDiff)} (${info.netPct >= 0 ? "+" : ""}${info.netPct.toFixed(2)}%)`;
+        headEl.style.color = info.netDiff >= 0 ? "#22c55e" : "#ef4444";
+      }
+      if (mmEl) {
+        mmEl.textContent = `Kezdőtőke: $${info.startCapital.toFixed(2)}`;
+      }
+      if (boxEl) {
+        boxEl.innerHTML = `
+          <div class="lvl-chip">
+            <span class="muted">Visszaforgatva (50% nyereség)</span>
+            <b style="color:#60a5fa;">+$${info.reinvestProfit.toFixed(2)}</b>
+            <span class="muted" style="font-size:0.72rem;">Vételi keret: $${info.nextBet.toFixed(2)}</span>
+          </div>
+          <div class="lvl-chip">
+            <span class="muted">Zsebbe gyűjtve (50% kivehető)</span>
+            <b style="color:${info.pocketProfit > 0 ? "#22c55e" : "#94a3b8"};">+$${info.pocketProfit.toFixed(2)}</b>
+            <span class="muted" style="font-size:0.72rem;">Átváltás után utalható</span>
+          </div>
+          <div class="lvl-chip">
+            <span class="muted">Kezdőtőke / Jelenlegi tőke</span>
+            <b>$${info.startCapital.toFixed(2)} / $${info.finalTotal.toFixed(2)}</b>
+          </div>
+          <div class="lvl-chip">
+            <span class="muted">Csúcs / Mélypont</span>
+            <b>$${info.peakTotal.toFixed(2)} / $${info.troughTotal.toFixed(2)}</b>
+          </div>
+        `;
+      }
+    }
+
+    function renderLivePnlPct(status) {
+      const el = document.getElementById("live-pnl-pct");
+      if (!el) return;
+
+      const hasPos = Boolean(status && status.has_position);
+      const pctNum = Number(status && status.profit_pct != null ? status.profit_pct : 0);
+      const usdtNum = Number(status && status.profit_usdt != null ? status.profit_usdt : 0);
+      const pctText = (status && status.pnl_pct_text)
+        ? status.pnl_pct_text
+        : `${pctNum >= 0 ? "+" : ""}${pctNum.toFixed(2)}%`;
+
+      el.classList.remove("pnl-pos", "pnl-neg");
+
+      if (!hasPos) {
+        el.textContent = "Pillanatnyi PnL: 0.00% ($0.00)";
+        return;
+      }
+
+      el.textContent = `Pillanatnyi PnL: ${pctText} (${formatSignedUsd(usdtNum)})`;
+      if (pctNum > 0) el.classList.add("pnl-pos");
+      else if (pctNum < 0) el.classList.add("pnl-neg");
+    }
+
+    function renderRealizedPnl(status, history) {
+      const now = new Date();
+      const todayStr = now.toISOString().slice(0, 10);
+      document.getElementById("realized-date").textContent = `Nap: ${todayStr}`;
+
+      let daily = 0;
+      let weekly = 0;
+      let monthly = 0;
+      const weekAgo = Date.now() - 7 * 86400000;
+      const monthAgo = Date.now() - 30 * 86400000;
+
+      for (const item of (history || [])) {
+        if (String(item.side || "").toUpperCase() === "SELL") {
+          const pnl = getItemPnlUsd(item);
+          const ts = Date.parse(item.time || "");
+          if (!Number.isNaN(ts)) {
+            if ((item.time || "").slice(0, 10) === todayStr) daily += pnl;
+            if (ts >= weekAgo) weekly += pnl;
+            if (ts >= monthAgo) monthly += pnl;
+          }
         }
+      }
 
-    resp = _pionex_signed_request("POST", "/api/v1/trade/order", body_obj=body)
-    data = resp.get("data") or {}
-    order_id = str(data.get("orderId") or data.get("order_id") or client_order_id)
+      const dEl = document.getElementById("pnl-daily");
+      const wEl = document.getElementById("pnl-weekly");
+      const mEl = document.getElementById("pnl-monthly");
 
-    time.sleep(0.6)
-    merged = _collect_order_fills(order_id, expected_size=size_crypto, ref_price=price)
-    if merged:
-        return {"simulated": False, **merged}
+      dEl.textContent = formatSignedUsd(daily);
+      wEl.textContent = formatSignedUsd(weekly);
+      mEl.textContent = formatSignedUsd(monthly);
 
-    fallback_px = float(price or data.get("price") or 0.0)
-    fallback_qty = float(size_crypto or 0.0)
-    if side.upper() == "BUY" and amount_usdt and fallback_px > 0:
-        fallback_qty = round(float(amount_usdt) / fallback_px, 6)
-    fallback_usdt = round(fallback_qty * fallback_px, 2)
-    return {
-        "simulated": False,
-        "order_id": order_id,
-        "avg_price": round(fallback_px, 4),
-        "filled_qty": round(fallback_qty, 6),
-        "filled_usdt": fallback_usdt,
-        "fill_count": 1,
+      dEl.style.color = daily >= 0 ? "#22c55e" : "#ef4444";
+      wEl.style.color = weekly >= 0 ? "#22c55e" : "#ef4444";
+      mEl.style.color = monthly >= 0 ? "#22c55e" : "#ef4444";
     }
 
-
-def fetch_pionex_snapshot(runtime_state, previous_status, now_ts):
-    price = float(previous_status.get("price") or runtime_state.get("last_price") or 0.0)
-    free_usdt = float(previous_status.get("free_usdt") or runtime_state.get("free_usdt") or 0.0)
-    free_crypto = float(previous_status.get("free_crypto") or runtime_state.get("free_crypto") or 0.0)
-    balances_ok = False
-
-    try:
-        live_price = _fetch_pionex_public_price()
-        if live_price and live_price > 0:
-            price = live_price
-    except Exception as exc:
-        print(f"[PIONEX] Árfolyam lekérési figyelmeztetés: {exc}")
-        send_throttled_telegram(runtime_state, "pionex_price_err", f"Pionex ár hiba: {exc}", now_ts)
-
-    try:
-        bal_map = _fetch_pionex_balances()
-        if bal_map is not None:
-            balances_ok = True
-            if QUOTE_COIN.upper() in bal_map:
-                free_usdt = round(bal_map[QUOTE_COIN.upper()], 4)
-            if BASE_COIN.upper() in bal_map:
-                free_crypto = round(bal_map[BASE_COIN.upper()], 6)
-    except Exception as exc:
-        print(f"[PIONEX] Egyenleg lekérési figyelmeztetés: {exc}")
-        send_throttled_telegram(runtime_state, "pionex_bal_err", f"Pionex egyenleg hiba: {exc}", now_ts)
-
-    recent_trades = (
-        previous_status.get("recent_trades")
-        if isinstance(previous_status.get("recent_trades"), list)
-        else []
-    )
-    next_bet_usdt = float(
-        previous_status.get("next_bet_usdt") or runtime_state.get("next_bet_usdt") or ORDER_AMOUNT_USDT
-    )
-    return {
-        "price": price,
-        "free_usdt": free_usdt,
-        "free_crypto": free_crypto,
-        "balances_ok": balances_ok,
-        "next_bet_usdt": next_bet_usdt,
-        "recent_trades": recent_trades,
+    function syncSimulatorDefaults(s) {
+      if (simTouched || !s) return;
+      if (Number(s.free_crypto) > 0) document.getElementById("sim-qty").value = Number(s.free_crypto).toFixed(4);
+      if (Number(s.entry_price) > 0) document.getElementById("sim-entry").value = Number(s.entry_price).toFixed(2);
+      if (Number(s.price) > 0) document.getElementById("sim-target").value = Number(s.price).toFixed(2);
+      updateSimulator();
     }
 
+    function renderStatus(s) {
+      if (!s) return;
+      latestStatus = s;
 
-def sync_git_safe(runtime_state, now_ts):
-    last_sync = float(runtime_state.get("last_git_sync_ts") or 0.0)
-    if now_ts - last_sync < GIT_SYNC_SECONDS:
-        return False
+      const price = Number(s.price || 0);
+      const totalUsd = Number(s.total_usd || 0);
+      const freeUsdt = Number(s.free_usdt || 0);
+      const freeCrypto = Number(s.free_crypto || 0);
+      const entryPrice = s.entry_price != null ? Number(s.entry_price) : null;
+      const pctNum = Number(s.profit_pct != null ? s.profit_pct : 0);
+      const pctText = s.pnl_pct_text || `${pctNum >= 0 ? "+" : ""}${pctNum.toFixed(2)}%`;
 
-    try:
-        files_to_add = [str(STATUS_FILE.name)]
-        if HISTORY_FILE.exists():
-            files_to_add.append(str(HISTORY_FILE.name))
+      document.getElementById("total-usd").textContent = `$${totalUsd.toFixed(2)}`;
+      document.getElementById("status-detail").textContent =
+        s.status_detail || `${freeCrypto.toFixed(4)} SOL (${(freeCrypto * price).toFixed(2)} USDT)`;
 
-        subprocess.run(
-            ["git", "add"] + files_to_add,
-            cwd=BASE_DIR,
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=20,
-        )
+      const upd = (s.updated_at || "").replace("T", " ").slice(11, 19);
+      document.getElementById("updated-badge").textContent = upd ? `${upd} UTC • ${s.status || ""}` : (s.status || "");
 
-        status_proc = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=BASE_DIR,
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=20,
-        )
-        if status_proc.stdout.strip():
-            msg = f"Pionex robot frissítés - {utc_now().strftime('%H:%M')} UTC [skip ci]"
-            subprocess.run(
-                ["git", "commit", "-m", msg],
-                cwd=BASE_DIR,
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=20,
-            )
+      document.getElementById("sol-price").textContent = `$${price.toFixed(2)}`;
+      document.getElementById("entry-price").textContent =
+        entryPrice ? `Bekerülés: $${entryPrice.toFixed(2)}` : "Bekerülés: —";
 
-        try:
-            subprocess.run(
-                ["git", "pull", "--rebase", "origin", "main"],
-                cwd=BASE_DIR,
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-        except Exception:
-            subprocess.run(
-                ["git", "rebase", "--abort"],
-                cwd=BASE_DIR,
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
+      document.getElementById("free-usdt").textContent = `$${freeUsdt.toFixed(2)}`;
+      document.getElementById("free-sol").textContent = `${freeCrypto.toFixed(4)} SOL`;
 
-        subprocess.run(
-            ["git", "push", "origin", "main"],
-            cwd=BASE_DIR,
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        runtime_state["last_git_sync_ts"] = now_ts
-        print("[GIT] Szinkronizálva az origin/main ággal.")
-        return True
-    except Exception as exc:
-        print(f"[GIT] Szinkron figyelmeztetés: {exc}")
-        send_throttled_telegram(runtime_state, "git_sync_error", f"Git hiba: {exc}", now_ts)
-        return False
+      const indText = `MA10: ${s.ma10 ?? "—"} • MA30: ${s.ma30 ?? "—"} • RSI: ${s.rsi ?? "—"} • ADX: ${s.adx ?? "—"}`;
+      document.getElementById("indicators-line").textContent = indText;
 
+      const rightPriceEl = document.getElementById("overview-chart-price");
+      rightPriceEl.textContent = `$${price.toFixed(2)} (${pctText})`;
+      rightPriceEl.style.color = pctNum >= 0 ? "#22c55e" : "#ef4444";
 
-def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
-    pionex = fetch_pionex_snapshot(runtime_state, previous_status, now_ts)
-    indicators = fetch_indicators_safe(runtime_state, previous_status, now_ts)
-    runtime_state["last_indicators"] = indicators
-
-    price = float(pionex["price"])
-    free_usdt = float(pionex["free_usdt"])
-    free_crypto = float(pionex["free_crypto"])
-    balances_ok = bool(pionex.get("balances_ok", False))
-    recent_trades = list(pionex.get("recent_trades") or [])
-
-    has_position = bool(runtime_state.get("has_position", False))
-    entry_price = runtime_state.get("entry_price")
-    entry_size = runtime_state.get("entry_size")
-    entry_cost_usdt = round(float(runtime_state.get("entry_cost_usdt") or 0.0), 2)
-    highest_price = runtime_state.get("highest_price")
-    trailing_active = bool(runtime_state.get("trailing_active", False))
-    stop_loss_price = runtime_state.get("stop_loss_price")
-    zero_pos_streak = int(runtime_state.get("zero_pos_streak") or 0)
-
-    last_sell_ts = float(runtime_state.get("last_sell_ts") or 0.0)
-    last_sold_crypto = float(runtime_state.get("last_sold_crypto") or 0.0)
-    sell_cooldown_ok = (now_ts - last_sell_ts) >= SELL_COOLDOWN_SECONDS
-
-    unchanged_after_sell = (
-        last_sold_crypto > 0
-        and abs(free_crypto - last_sold_crypto) <= 0.001
-        and not sell_cooldown_ok
-    )
-
-    if free_crypto >= MIN_POSITION_CRYPTO:
-        zero_pos_streak = 0
-        if not has_position and price > 0 and not unchanged_after_sell:
-            adopted_entry = round(float(entry_price or DEFAULT_ADOPT_ENTRY_PRICE), 4)
-            adopted_size = round(float(free_crypto), 6)
-            has_position = True
-            entry_price = adopted_entry
-            entry_size = adopted_size
-            entry_cost_usdt = round(adopted_size * adopted_entry, 2)
-            highest_price = round(max(price, adopted_entry), 4)
-            trailing_active = False
-            stop_loss_price = round(adopted_entry * (1.0 - STOP_LOSS_PCT / 100.0), 4)
-            runtime_state["entry_time"] = runtime_state.get("entry_time") or now_dt.isoformat()
-            print(f"[POS] Meglévő {BASE_COIN} átvéve: {adopted_size} @ ${adopted_entry}")
-    elif has_position and balances_ok:
-        zero_pos_streak += 1
-        if zero_pos_streak >= max(1, ZERO_POSITION_CONFIRM_CYCLES):
-            has_position = False
-            entry_price = None
-            entry_size = None
-            entry_cost_usdt = 0.0
-            highest_price = None
-            trailing_active = False
-            stop_loss_price = None
-            runtime_state["entry_time"] = None
-            zero_pos_streak = 0
-
-    ma10 = indicators.get("ma10")
-    ma30 = indicators.get("ma30")
-    adx = indicators.get("adx")
-    rsi = indicators.get("rsi")
-
-    buy_cooldown_ok = (now_ts - last_sell_ts) >= BUY_COOLDOWN_SECONDS
-
-    if (
-        not has_position
-        and price > 0
-        and buy_cooldown_ok
-        and free_usdt >= MIN_ORDER_USDT
-        and ma10 is not None
-        and ma30 is not None
-        and adx is not None
-        and rsi is not None
-        and float(ma10) > float(ma30)
-        and float(adx) >= ADX_MIN
-        and float(rsi) <= RSI_MAX
-    ):
-        spend_usdt = min(ORDER_AMOUNT_USDT, free_usdt) if LIVE_TRADING_ENABLED else ORDER_AMOUNT_USDT
-        if spend_usdt >= MIN_ORDER_USDT:
-            try:
-                res = _place_pionex_order("BUY", amount_usdt=spend_usdt, price=price)
-                fill_px = float(res["avg_price"] or price)
-                fill_qty = float(res["filled_qty"] or 0.0)
-                fill_usdt = float(res["filled_usdt"] or spend_usdt)
-                if fill_qty > 0 and fill_px > 0:
-                    has_position = True
-                    entry_price = round(fill_px, 4)
-                    entry_size = round(fill_qty, 6)
-                    entry_cost_usdt = round(fill_usdt, 2)
-                    highest_price = round(max(price, fill_px), 4)
-                    trailing_active = False
-                    stop_loss_price = round(entry_price * (1.0 - STOP_LOSS_PCT / 100.0), 4)
-                    runtime_state["entry_time"] = now_dt.isoformat()
-                    runtime_state["last_sold_crypto"] = 0.0
-                    zero_pos_streak = 0
-                    if not LIVE_TRADING_ENABLED:
-                        free_crypto = round(free_crypto + fill_qty, 6)
-                        free_usdt = round(max(0.0, free_usdt - fill_usdt), 4)
-                    trade_rec = {
-                        "time": now_dt.isoformat(),
-                        "side": "BUY",
-                        "price": entry_price,
-                        "size": entry_size,
-                        "usdt": entry_cost_usdt,
-                        "order_id": res["order_id"],
-                        "simulated": res["simulated"],
-                    }
-                    recent_trades = ([trade_rec] + recent_trades)[:30]
-                    append_history_event(trade_rec)
-                    mode_tag = "[SIM] " if res["simulated"] else ""
-                    msg = f"{mode_tag}BUY @ ${entry_price} | {entry_size} {BASE_COIN} (${entry_cost_usdt})"
-                    print(f"[TRADE] {msg}")
-                    send_throttled_telegram(runtime_state, "trade_buy", msg, now_ts, cooldown_seconds=60)
-            except Exception as exc:
-                print(f"[TRADE] BUY hiba: {exc}")
-                send_throttled_telegram(runtime_state, "trade_buy_err", f"BUY hiba: {exc}", now_ts)
-
-    elif has_position and price > 0 and entry_price and sell_cooldown_ok:
-        ep = float(entry_price)
-        cur_high = max(float(highest_price or ep), price)
-        highest_price = round(cur_high, 4)
-        cur_profit_pct = ((price - ep) / ep) * 100.0
-
-        if cur_profit_pct >= TRAILING_START_PCT:
-            trailing_active = True
-
-        trailing_stop_px = (
-            cur_high * (1.0 - TRAILING_CALLBACK_PCT / 100.0) if trailing_active else None
-        )
-        sl_px = float(stop_loss_price or (ep * (1.0 - STOP_LOSS_PCT / 100.0)))
-        stop_loss_price = round(sl_px, 4)
-
-        sell_reason = None
-        if price <= sl_px:
-            sell_reason = f"STOP_LOSS ({cur_profit_pct:.2f}%)"
-        elif trailing_active and trailing_stop_px is not None and price <= trailing_stop_px:
-            sell_reason = f"TRAILING_STOP ({cur_profit_pct:.2f}%)"
-
-        if sell_reason:
-            raw_target_qty = (
-                min(float(entry_size or free_crypto), free_crypto)
-                if free_crypto > 0
-                else float(entry_size or 0.0)
-            )
-            sell_qty = math.floor(raw_target_qty * 10000.0) / 10000.0
-            if sell_qty >= MIN_POSITION_CRYPTO:
-                try:
-                    res = _place_pionex_order("SELL", size_crypto=sell_qty, price=price)
-                    sell_px = float(res["avg_price"] or price)
-                    sold_qty = float(res["filled_qty"] or sell_qty)
-                    if sold_qty > free_crypto and free_crypto > 0:
-                        sold_qty = free_crypto
-                    sold_usdt = round(sold_qty * sell_px, 2)
-                    realized_pnl = round((sell_px - ep) * sold_qty, 2)
-
-                    if not LIVE_TRADING_ENABLED:
-                        free_crypto = round(max(0.0, free_crypto - sold_qty), 6)
-                        free_usdt = round(free_usdt + sold_usdt, 4)
-
-                    has_position = False
-                    entry_price = None
-                    entry_size = None
-                    entry_cost_usdt = 0.0
-                    highest_price = None
-                    trailing_active = False
-                    stop_loss_price = None
-                    zero_pos_streak = 0
-                    runtime_state["entry_time"] = None
-                    runtime_state["last_sell_ts"] = now_ts
-                    runtime_state["last_sold_crypto"] = round(free_crypto, 6)
-
-                    trade_rec = {
-                        "time": now_dt.isoformat(),
-                        "side": "SELL",
-                        "price": round(sell_px, 4),
-                        "size": round(sold_qty, 6),
-                        "usdt": sold_usdt,
-                        "pnl_usdt": realized_pnl,
-                        "reason": sell_reason,
-                        "order_id": res["order_id"],
-                        "simulated": res["simulated"],
-                    }
-                    recent_trades = ([trade_rec] + recent_trades)[:30]
-                    append_history_event(trade_rec)
-                    mode_tag = "[SIM] " if res["simulated"] else ""
-                    msg = f"{mode_tag}SELL ({sell_reason}) @ ${round(sell_px, 4)} | PnL: ${realized_pnl}"
-                    print(f"[TRADE] {msg}")
-                    send_throttled_telegram(runtime_state, "trade_sell", msg, now_ts, cooldown_seconds=60)
-                except Exception as exc:
-                    print(f"[TRADE] SELL hiba: {exc}")
-                    send_throttled_telegram(runtime_state, "trade_sell_err", f"SELL hiba: {exc}", now_ts)
-
-    position_usd = round(free_crypto * price, 2)
-    total_usd = round(free_usdt + position_usd, 2)
-
-    profit_pct = (
-        round(((price - float(entry_price)) / float(entry_price)) * 100.0, 2)
-        if has_position and entry_price
-        else 0.0
-    )
-    profit_usdt = (
-        round((price - float(entry_price)) * float(entry_size), 2)
-        if has_position and entry_price and entry_size
-        else 0.0
-    )
-    pnl_pct_text = f"{profit_pct:+.2f}%" if has_position and entry_price else "0.00%"
-
-    runtime_state["has_position"] = has_position
-    runtime_state["entry_price"] = entry_price
-    runtime_state["entry_size"] = entry_size
-    runtime_state["entry_cost_usdt"] = entry_cost_usdt
-    runtime_state["highest_price"] = highest_price
-    runtime_state["trailing_active"] = trailing_active
-    runtime_state["stop_loss_price"] = stop_loss_price
-    runtime_state["zero_pos_streak"] = zero_pos_streak
-    runtime_state["last_price"] = price
-    runtime_state["free_usdt"] = free_usdt
-    runtime_state["free_crypto"] = free_crypto
-
-    status = "TARTAS" if has_position else "VARAKOZAS"
-    status_detail = f"{free_crypto:.4f} {BASE_COIN} ({position_usd:.2f} {QUOTE_COIN})"
-
-    status_doc = {
-        "updated_at": now_dt.isoformat(),
-        "symbol": SYMBOL,
-        "base_coin": BASE_COIN,
-        "quote_coin": QUOTE_COIN,
-        "live_trading_enabled": LIVE_TRADING_ENABLED,
-        "price": price,
-        "pionex_price": price,
-        "yf_price": indicators.get("yf_price"),
-        "ma5": indicators.get("ma5"),
-        "ma15": indicators.get("ma15"),
-        "ma10": indicators.get("ma10"),
-        "ma30": indicators.get("ma30"),
-        "adx": indicators.get("adx"),
-        "rsi": indicators.get("rsi"),
-        "adx_min": ADX_MIN,
-        "rsi_max": RSI_MAX,
-        "free_usdt": free_usdt,
-        "free_crypto": free_crypto,
-        "next_bet_usdt": pionex.get("next_bet_usdt", ORDER_AMOUNT_USDT),
-        "position_usd": position_usd,
-        "total_usd": total_usd,
-        "has_position": has_position,
-        "entry_price": entry_price,
-        "entry_time": runtime_state.get("entry_time") if has_position else None,
-        "entry_size": entry_size,
-        "entry_cost_usdt": entry_cost_usdt,
-        "highest_price": highest_price,
-        "trailing_active": trailing_active,
-        "stop_loss_price": stop_loss_price,
-        "stop_loss_pct": STOP_LOSS_PCT,
-        "profit_pct": profit_pct,
-        "profit_usdt": profit_usdt,
-        "pnl_pct_text": pnl_pct_text,
-        "status": status,
-        "status_detail": status_detail,
-        "recent_trades": recent_trades,
+      renderLivePnlPct(s);
+      renderRealizedPnl(s, latestHistory);
+      renderCapitalView(s, latestHistory);
+      syncSimulatorDefaults(s);
+      drawCharts();
     }
 
-    save_json_atomic(STATUS_FILE, status_doc)
-    save_json_atomic(STATE_FILE, runtime_state)
-    return status_doc
+    function drawOverviewPriceChart() {
+      const canvas = document.getElementById("overviewChart");
+      if (!canvas) return;
 
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const cssW = canvas.clientWidth || 480;
+      const cssH = canvas.clientHeight || 220;
+      if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
+        canvas.width = Math.round(cssW * dpr);
+        canvas.height = Math.round(cssH * dpr);
+      }
 
-def run_robot_forever():
-    runtime_state = load_json_safe(
-        STATE_FILE,
-        {
-            "alert_timestamps": {},
-            "last_git_sync_ts": 0.0,
-            "last_sell_ts": 0.0,
-            "last_sold_crypto": 0.0,
-            "zero_pos_streak": 0,
-        },
-    )
-    print(
-        f"[{utc_now().strftime('%Y-%m-%d %H:%M:%S')} UTC] "
-        f"Pionex SOL Robot elindult. (LIVE_TRADING_ENABLED={LIVE_TRADING_ENABLED})"
-    )
-    while True:
-        now_dt = utc_now()
-        now_ts = time.time()
-        try:
-            previous_status = load_json_safe(STATUS_FILE, {})
-            evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts)
-            sync_git_safe(runtime_state, now_ts)
-        except Exception as exc:
-            print(f"[ERROR] Ciklus hiba: {exc}")
-            send_throttled_telegram(runtime_state, "loop_error", f"Ciklus hiba: {exc}", now_ts)
-        time.sleep(CYCLE_SECONDS)
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cssW, cssH);
 
+      const points = [];
+      for (const row of latestHistory) {
+        const px = Number(row.price);
+        if (!Number.isNaN(px) && px > 0) points.push(px);
+      }
+      if (latestStatus && Number(latestStatus.price) > 0) {
+        points.push(Number(latestStatus.price));
+      }
 
-if __name__ == "__main__":
-    run_robot_forever()
+      if (points.length < 2) {
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "12px -apple-system, sans-serif";
+        ctx.fillText("Nincs elég előzményadat a grafikonhoz.", 14, cssH / 2);
+        return;
+      }
+
+      const lv = computeExitLevels(latestStatus);
+      const scaleValues = [...points];
+      if (lv) {
+        scaleValues.push(lv.entry, lv.trailStart, lv.trailingStop, lv.stopLoss);
+      }
+
+      const rawMin = Math.min(...scaleValues);
+      const rawMax = Math.max(...scaleValues);
+      const padVal = Math.max((rawMax - rawMin) * 0.12, 0.25);
+      const minP = rawMin - padVal;
+      const maxP = rawMax + padVal;
+      const span = Math.max(maxP - minP, 0.01);
+
+      const mmEl = document.getElementById("overview-minmax");
+      if (mmEl) mmEl.textContent = `Min: $${Math.min(...points).toFixed(2)} • Max: $${Math.max(...points).toFixed(2)}`;
+
+      const padL = 10, padR = 62, padT = 14, padB = 16;
+      const plotW = Math.max(cssW - padL - padR, 40);
+      const plotH = Math.max(cssH - padT - padB, 40);
+      const toY = (val) => padT + (1 - (val - minP) / span) * plotH;
+
+      ctx.font = "10px -apple-system, sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      for (let i = 0; i <= 4; i++) {
+        const ratio = i / 4;
+        const y = padT + ratio * plotH;
+        const val = maxP - ratio * span;
+        ctx.strokeStyle = "rgba(148, 163, 184, 0.09)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(padL, y);
+        ctx.lineTo(padL + plotW, y);
+        ctx.stroke();
+
+        ctx.fillStyle = "#64748b";
+        ctx.fillText(`$${val.toFixed(2)}`, padL + plotW + 6, y);
+      }
+
+      function drawLevelLine(val, color) {
+        if (val == null || Number.isNaN(val) || val < minP || val > maxP) return;
+        const y = toY(val);
+        ctx.save();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.25;
+        ctx.beginPath();
+        ctx.moveTo(padL, y);
+        ctx.lineTo(padL + plotW, y);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      if (lv) {
+        drawLevelLine(lv.trailStart, "#fbbf24");
+        drawLevelLine(lv.entry, "#60a5fa");
+        drawLevelLine(lv.trailingStop, "#f97316");
+        drawLevelLine(lv.stopLoss, "#ef4444");
+      }
+
+      ctx.beginPath();
+      points.forEach((px, idx) => {
+        const x = padL + (idx / (points.length - 1)) * plotW;
+        const y = toY(px);
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = "#22c55e";
+      ctx.lineWidth = 2.2;
+      ctx.stroke();
+
+      const lastX = padL + plotW;
+      const lastY = toY(points[points.length - 1]);
+      ctx.fillStyle = "#22c55e";
+      ctx.beginPath();
+      ctx.arc(lastX, lastY, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawCapitalPnlChart() {
+      const canvas = document.getElementById("capitalChart");
+      if (!canvas) return;
+
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const cssW = canvas.clientWidth || 480;
+      const cssH = canvas.clientHeight || 220;
+      if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
+        canvas.width = Math.round(cssW * dpr);
+        canvas.height = Math.round(cssH * dpr);
+      }
+
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cssW, cssH);
+
+      const info = computeCapitalCurve(latestStatus, latestHistory);
+      const pts = info.curve;
+      if (pts.length < 2) {
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "12px -apple-system, sans-serif";
+        ctx.fillText("Még nincs elég tőke-előzmény a grafikonhoz.", 14, cssH / 2);
+        return;
+      }
+
+      const base = info.startCapital;
+      const allVals = [...pts, base];
+      const rawMin = Math.min(...allVals);
+      const rawMax = Math.max(...allVals);
+      const padVal = Math.max((rawMax - rawMin) * 0.16, 0.5);
+      const minP = rawMin - padVal;
+      const maxP = rawMax + padVal;
+      const span = Math.max(maxP - minP, 0.01);
+
+      const padL = 10, padR = 64, padT = 16, padB = 16;
+      const plotW = Math.max(cssW - padL - padR, 40);
+      const plotH = Math.max(cssH - padT - padB, 40);
+      const toY = (val) => padT + (1 - (val - minP) / span) * plotH;
+
+      ctx.font = "10px -apple-system, sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      for (let i = 0; i <= 4; i++) {
+        const ratio = i / 4;
+        const y = padT + ratio * plotH;
+        const val = maxP - ratio * span;
+        ctx.strokeStyle = "rgba(148, 163, 184, 0.09)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(padL, y);
+        ctx.lineTo(padL + plotW, y);
+        ctx.stroke();
+
+        ctx.fillStyle = "#64748b";
+        ctx.fillText(`$${val.toFixed(2)}`, padL + plotW + 6, y);
+      }
+
+      const yBase = toY(base);
+      ctx.save();
+      ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = "#60a5fa";
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(padL, yBase);
+      ctx.lineTo(padL + plotW, yBase);
+      ctx.stroke();
+      ctx.fillStyle = "#60a5fa";
+      ctx.font = "600 10px -apple-system, sans-serif";
+      ctx.fillText(`Kezdőtőke $${base.toFixed(2)}`, padL + 4, Math.max(padT + 8, yBase - 8));
+      ctx.restore();
+
+      for (let i = 0; i < pts.length - 1; i++) {
+        const x1 = padL + (i / (pts.length - 1)) * plotW;
+        const y1 = toY(pts[i]);
+        const x2 = padL + ((i + 1) / (pts.length - 1)) * plotW;
+        const y2 = toY(pts[i + 1]);
+        const avgVal = (pts[i] + pts[i + 1]) / 2;
+
+        ctx.strokeStyle = avgVal >= base ? "#22c55e" : "#ef4444";
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
+
+      const lastVal = pts[pts.length - 1];
+      const lastX = padL + plotW;
+      const lastY = toY(lastVal);
+      ctx.fillStyle = lastVal >= base ? "#22c55e" : "#ef4444";
+      ctx.beginPath();
+      ctx.arc(lastX, lastY, 3.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawCharts() {
+      drawOverviewPriceChart();
+      drawCapitalPnlChart();
+    }
+
+    function renderTrades(history) {
+      latestHistory = Array.isArray(history) ? history : [];
+      renderRealizedPnl(latestStatus, latestHistory);
+      renderCapitalView(latestStatus, latestHistory);
+      drawCharts();
+
+      const container = document.getElementById("trades-list");
+      if (!container) return;
+
+      if (!latestHistory.length) {
+        container.innerHTML = `<div class="muted" style="margin-top:8px;">Nincs bejegyzés a naplóban.</div>`;
+        return;
+      }
+
+      const items = [...latestHistory].reverse().slice(0, 25);
+      container.innerHTML = items.map((item) => {
+        const dt = (item.time || "").replace("T", " ").slice(0, 19);
+        const side = (item.side || item.status || "INFO").toUpperCase();
+        const cls = side === "BUY" ? "side-buy" : side === "SELL" ? "side-sell" : "side-hold";
+        const px = item.price != null ? `$${Number(item.price).toFixed(2)}` : "—";
+        const pnlDisplay = formatSignedUsd(getItemPnlUsd(item));
+
+        const extra = side === "SELL"
+          ? `${Number(item.size || 0).toFixed(4)} SOL • PnL: ${pnlDisplay} (${item.reason || ""})`
+          : side === "BUY"
+          ? `${Number(item.size || 0).toFixed(4)} SOL ($${Number(item.usdt || 0).toFixed(2)})`
+          : `Egyenleg: $${Number(item.total_usd || 0).toFixed(2)}`;
+
+        return `
+          <div class="trade-item">
+            <div>
+              <span class="${cls}">${side}</span>
+              <div class="muted" style="font-size:0.76rem; margin-top:2px;">${dt}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-weight:700;">${px}</div>
+              <div class="muted" style="font-size:0.78rem; margin-top:2px;">${extra}</div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function updateSimulator() {
+      const qty = Number(document.getElementById("sim-qty").value || 0);
+      const entry = Number(document.getElementById("sim-entry").value || 0);
+      const target = Number(document.getElementById("sim-target").value || 0);
+      const out = document.getElementById("sim-result");
+      if (!out) return;
+
+      const cost = qty * entry;
+      const val = qty * target;
+      const diff = val - cost;
+      const pct = entry > 0 ? ((target - entry) / entry) * 100 : 0;
+
+      out.innerHTML = `
+        <div>Költség: <b>$${cost.toFixed(2)}</b> • Érték céláron: <b>$${val.toFixed(2)}</b></div>
+        <div style="margin-top:4px; color:${diff >= 0 ? "#22c55e" : "#ef4444"}; font-weight:700;">
+          Eredmény: ${formatSignedUsd(diff)} (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)
+        </div>
+      `;
+    }
+
+    ["sim-qty", "sim-entry", "sim-target"].forEach((id) => {
+      const inp = document.getElementById(id);
+      if (inp) {
+        inp.addEventListener("input", () => {
+          simTouched = true;
+          updateSimulator();
+        });
+      }
+    });
+
+    window.addEventListener("resize", drawCharts);
+
+    async function loadAll() {
+      const btn = document.getElementById("refresh-btn");
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Frissítés...";
+      }
+      try {
+        const [stRes, histRes] = await Promise.all([
+          fetch(`./pionex_status.json?t=${Date.now()}`, { cache: "no-store" }),
+          fetch(`./pionex_history.json?t=${Date.now()}`, { cache: "no-store" }),
+        ]);
+        if (stRes.ok) {
+          const stData = await stRes.json();
+          renderStatus(stData);
+        }
+        if (histRes.ok) {
+          const histData = await histRes.json();
+          renderTrades(histData);
+        }
+      } catch (err) {
+        console.error("Adatbetöltési hiba:", err);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = "Frissítés";
+        }
+      }
+    }
+
+    const refreshBtn = document.getElementById("refresh-btn");
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", loadAll);
+    }
+
+    updateSimulator();
+    loadAll();
+    setInterval(loadAll, 30000);
+  </script>
+</body>
+</html>
