@@ -167,7 +167,7 @@
     <!-- 3. KÖTÉSEK -->
     <section id="view-trades" class="view">
       <div class="card">
-        <div class="muted">Előzmények és kötések (`pionex_history.json`)</div>
+        <div class="muted">Előzmények és kötések (pionex_history.json)</div>
         <div id="trades-list" style="margin-top: 6px;">
           <div class="muted" style="margin-top: 8px;">Betöltés...</div>
         </div>
@@ -202,8 +202,8 @@
   <script>
     let latestStatus = null;
     let latestHistory = [];
+    let simTouched = false;
 
-    // Fülváltás kezelése
     document.querySelectorAll(".tab-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         const targetId = btn.getAttribute("data-tab");
@@ -241,6 +241,20 @@
       else if (pctNum < 0) el.classList.add("pnl-neg");
     }
 
+    function syncSimulatorDefaults(s) {
+      if (simTouched || !s) return;
+      if (Number(s.free_crypto) > 0) {
+        document.getElementById("sim-qty").value = Number(s.free_crypto).toFixed(4);
+      }
+      if (Number(s.entry_price) > 0) {
+        document.getElementById("sim-entry").value = Number(s.entry_price).toFixed(2);
+      }
+      if (Number(s.price) > 0) {
+        document.getElementById("sim-target").value = Number(s.price).toFixed(2);
+      }
+      updateSimulator();
+    }
+
     function renderStatus(s) {
       if (!s) return;
       latestStatus = s;
@@ -271,6 +285,7 @@
         `Frissítés: ${s.updated_at || "—"} (${s.status || "—"})`;
 
       renderLivePnlPct(s);
+      syncSimulatorDefaults(s);
       if (document.getElementById("view-charts").classList.contains("active")) {
         drawPriceChart();
       }
@@ -314,7 +329,6 @@
       const plotW = w - padL - padR;
       const plotH = h - padT - padB;
 
-      // Árfolyamvonal
       ctx.beginPath();
       points.forEach((pt, idx) => {
         const x = padL + (idx / (points.length - 1)) * plotW;
@@ -326,7 +340,6 @@
       ctx.lineWidth = 2.5;
       ctx.stroke();
 
-      // Bekerülési ár vonala, ha van
       if (latestStatus && Number(latestStatus.entry_price) > 0) {
         const ep = Number(latestStatus.entry_price);
         if (ep >= minP && ep <= maxP) {
@@ -402,7 +415,12 @@
 
     ["sim-qty", "sim-entry", "sim-target"].forEach((id) => {
       const inp = document.getElementById(id);
-      if (inp) inp.addEventListener("input", updateSimulator);
+      if (inp) {
+        inp.addEventListener("input", () => {
+          simTouched = true;
+          updateSimulator();
+        });
+      }
     });
 
     async function loadAll() {
