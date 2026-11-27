@@ -1,11 +1,11 @@
 {
-  "updated_at": "2026-11-27T17:15:11.472660+00:00",
+  "updated_at": "2026-11-27T17:15:57.617151+00:00",
   "symbol": "SOLUSDT",
   "base_coin": "SOL",
   "quote_coin": "USDT",
   "live_trading_enabled": true,
-  "price": 72.07,
-  "pionex_price": 72.07,
+  "price": 72.06,
+  "pionex_price": 72.06,
   "yf_price": 71.99,
   "ma5": 72.006,
   "ma15": 72.068,
@@ -18,8 +18,8 @@
   "free_usdt": 0.5193,
   "free_crypto": 0.734455,
   "next_bet_usdt": 15.0,
-  "position_usd": 52.93,
-  "total_usd": 53.45,
+  "position_usd": 52.92,
+  "total_usd": 53.44,
   "has_position": false,
   "entry_price": null,
   "entry_time": null,
@@ -32,6 +32,6 @@
   "profit_pct": 0.0,
   "profit_usdt": 0.0,
   "status": "VARAKOZAS",
-  "status_detail": "0.7345 SOL (52.93 USDT)",
+  "status_detail": "0.7345 SOL (52.92 USDT)",
   "recent_trades": []
 }
