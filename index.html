@@ -264,6 +264,11 @@
         <div class="kpi-sub" id="freeSol">-</div>
       </div>
     </div>
+
+    <div class="card">
+      <div class="section-title">Aktuális árfolyam-diagram</div>
+      <canvas id="overview-trend-canvas" width="680" height="220"></canvas>
+    </div>
   </section>
 
   <section id="tab-charts" class="tab-view">
@@ -320,7 +325,9 @@
       const target = document.getElementById(`tab-${tabName}`);
       if (target) target.classList.add("active");
       if (btnElement) btnElement.classList.add("active");
-      if (tabName === "charts") {
+      if (tabName === "overview") {
+        renderTrendChart("overview-trend-canvas", latestRealPayload, latestRealEntries);
+      } else if (tabName === "charts") {
         renderTrendChart("trend-ladder-canvas", latestRealPayload, latestRealEntries);
       }
     }
@@ -681,6 +688,7 @@
 
       updateOverviewFromPayload(payload, latestRealEntries);
       renderRealTradesTab(latestRealEntries, sourceName, "trades-tab-content");
+      renderTrendChart("overview-trend-canvas", latestRealPayload, latestRealEntries);
       renderTrendChart("trend-ladder-canvas", latestRealPayload, latestRealEntries);
       updateSim();
     }
