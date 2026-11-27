@@ -123,7 +123,6 @@
 
     .section-title { font-size: 0.9rem; font-weight: 700; margin-bottom: 10px; }
 
-    /* Kézi kereskedés és workflow indító kártya */
     .sell-header {
       display: flex;
       justify-content: space-between;
@@ -189,7 +188,6 @@
       min-height: 16px;
     }
 
-    /* Élő árfolyam grafikon fejléc + idősáv váltó */
     .chart-header {
       display: flex;
       justify-content: space-between;
@@ -240,7 +238,6 @@
       margin-right: 4px;
     }
 
-    /* Revolut USD kifizetés kártya */
     .rev-header {
       display: flex;
       justify-content: space-between;
@@ -1302,7 +1299,7 @@
       return 0;
     }
 
-    function formatTradePnl(trade, pairedBuy) {
+    function formatTradePnlUsd(trade, pairedBuy) {
       const side = String(trade?.side || '').toUpperCase();
       if (side !== 'SELL') {
         const px = Number(trade?.price);
@@ -1310,24 +1307,15 @@
       }
 
       const sellSize = Number(trade?.size);
-      const sellPrice = Number(trade?.price);
       const sellUsdt = extractTradeUsdt(trade);
 
       let pnl = Number(trade?.pnl_usdt);
-      let baseCost = 0;
-
-      if (Number.isFinite(pnl)) {
-        baseCost = sellUsdt > 0 ? sellUsdt - pnl : 0;
-      } else if (pairedBuy && pairedBuy.usdt > 0 && sellUsdt > 0) {
-        if (pairedBuy.size > 0 && sellSize > 0) {
+      if (!Number.isFinite(pnl)) {
+        if (pairedBuy && pairedBuy.usdt > 0 && sellUsdt > 0 && pairedBuy.size > 0 && sellSize > 0) {
           const sizeRatio = sellSize / pairedBuy.size;
           if (sizeRatio >= 0.85 && sizeRatio <= 1.15) {
-            baseCost = pairedBuy.usdt * sizeRatio;
-            pnl = sellUsdt - baseCost;
+            pnl = sellUsdt - (pairedBuy.usdt * sizeRatio);
           }
-        } else {
-          baseCost = pairedBuy.usdt;
-          pnl = sellUsdt - baseCost;
         }
       }
 
@@ -1335,15 +1323,11 @@
         return '';
       }
 
-      const pct = baseCost > 0 ? (pnl / baseCost) * 100 : null;
       const sign = pnl > 0 ? '+' : (pnl < 0 ? '-' : '');
       const absUsd = Math.abs(pnl).toFixed(2);
-      const pctText = pct !== null && Number.isFinite(pct)
-        ? ` (${pnl >= 0 ? '+' : '-'}${Math.abs(pct).toFixed(2)}%)`
-        : '';
       const cls = pnl > 0 ? 'pos' : (pnl < 0 ? 'neg' : '');
 
-      return ` • <strong class="${cls}">${sign}$${absUsd}${pctText}</strong>`;
+      return ` • <strong class="${cls}">${sign}$${absUsd}</strong>`;
     }
 
     function renderTrades(trades) {
@@ -1382,7 +1366,7 @@
         const safeUsdt = Number.isFinite(rawUsdt) ? rawUsdt.toFixed(2) : '0.00';
         const safeSize = Number.isFinite(size) ? size.toFixed(4) : '0.0000';
         const safePrice = Number.isFinite(price) ? price.toFixed(2) : '0.00';
-        const pnlSuffix = formatTradePnl(t, pairedBuys[idx]);
+        const pnlSuffix = formatTradePnlUsd(t, pairedBuys[idx]);
 
         return `
           <div class="trade-item">
