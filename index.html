@@ -198,7 +198,7 @@
     }
 
     .trade-excluded {
-      opacity: 0.65;
+      opacity: 0.7;
     }
 
     .notice-box {
@@ -324,11 +324,11 @@
 
   <section id="tab-trades" class="tab-view">
     <div class="card">
-      <div class="section-title">Valós adatforrás (JSON / API)</div>
+      <div class="section-title">Valós adatforrás (pionex_status.json / pionex_history.json)</div>
       <div class="controls-row">
-        <input id="custom-endpoint-input" type="text" value="./trades.json" placeholder="Pl. ./trades.json vagy /api/trades" />
+        <input id="custom-endpoint-input" type="text" value="./pionex_status.json" placeholder="Pl. ./pionex_status.json vagy ./pionex_history.json" />
         <button type="button" class="action-btn" onclick="loadFromCustomEndpoint()">Forrás betöltése</button>
-        <button type="button" class="action-btn" onclick="loadRealTradesFromKnownSources()">Automatikus keresés</button>
+        <button type="button" class="action-btn" onclick="loadRealTradesFromKnownSources()">Pionex fájlok betöltése</button>
         <button type="button" class="action-btn" onclick="renderRealTradesFromTextarea()">JSON alkalmazása</button>
       </div>
       <textarea id="real-trades-json-input" class="json-input" placeholder="Ide illesztheted a robot valós JSON kimenetét..."></textarea>
@@ -340,7 +340,7 @@
     </div>
 
     <div class="card">
-      <div class="section-title">Kötések és napi PnL (csak megbízható pnl_usdt)</div>
+      <div class="section-title">Kötések, naplópontok és napi PnL</div>
       <div id="trades-tab-content"></div>
     </div>
   </section>
@@ -348,10 +348,10 @@
   <section id="tab-sim" class="tab-view">
     <div class="card">
       <div class="section-title">Árfolyam-szimulátor</div>
-      <input type="range" id="simSlider" min="50" max="250" step="0.1" value="140" oninput="updateSim()" style="width: 100%; margin: 12px 0;" />
+      <input type="range" id="simSlider" min="50" max="250" step="0.1" value="71.83" oninput="updateSim()" style="width: 100%; margin: 12px 0;" />
       <div class="sim-stat">
         <span style="color: var(--muted);">Szimulált SOL ár</span>
-        <strong id="simPrice">$140.00</strong>
+        <strong id="simPrice">$71.83</strong>
       </div>
       <div class="sim-stat">
         <span style="color: var(--muted);">Becsült pozíció érték</span>
@@ -391,40 +391,64 @@
       }
     }
 
-    function updateSim() {
-      const slider = document.getElementById("simSlider");
-      const priceEl = document.getElementById("simPrice");
-      const totalEl = document.getElementById("simTotal");
-      if (!slider || !priceEl || !totalEl) return;
-
-      const simPrice = Number(slider.value) || 0;
-      const ladder = buildBuyInvestmentsAndSellLadders(latestRealTrades);
-      const solQty = ladder.totalBoughtSol;
-      priceEl.textContent = `$${simPrice.toFixed(2)}`;
-      totalEl.textContent = `$${(solQty * simPrice).toFixed(2)}`;
+    function getEntryTime(obj) {
+      if (!obj || typeof obj !== "object") return null;
+      return obj.time || obj.updated_at || obj.timestamp || obj.created_at || obj.date || null;
     }
 
-    function isReliableRealPnlTrade(trade) {
-      if (!trade || typeof trade !== "object") return false;
-      const rawPnl =
-        typeof trade.pnl_usdt === "number"
-          ? trade.pnl_usdt
-          : typeof trade.realized_pnl_usdt === "number"
-          ? trade.realized_pnl_usdt
+    function getEntrySize(entry) {
+      if (!entry || typeof entry !== "object") return 0;
+      const val =
+        typeof entry.size === "number"
+          ? entry.size
+          : typeof entry.sol_amount === "number"
+          ? entry.sol_amount
+          : typeof entry.amount === "number"
+          ? entry.amount
+          : 0;
+      return Number.isFinite(val) ? val : 0;
+    }
+
+    function getEntryUsdt(entry) {
+      if (!entry || typeof entry !== "object") return 0;
+      const val =
+        typeof entry.usdt === "number"
+          ? entry.usdt
+          : typeof entry.usdt_amount === "number"
+          ? entry.usdt_amount
+          : typeof entry.cost_usdt === "number"
+          ? entry.cost_usdt
+          : 0;
+      return Number.isFinite(val) ? val : 0;
+    }
+
+    function getEntryPnl(entry) {
+      if (!entry || typeof entry !== "object") return NaN;
+      const val =
+        typeof entry.pnl_usdt === "number"
+          ? entry.pnl_usdt
+          : typeof entry.realized_pnl_usdt === "number"
+          ? entry.realized_pnl_usdt
           : NaN;
-      if (!Number.isFinite(rawPnl)) return false;
-
-      const isExcludedLegacyItem =
-        trade.is_legacy === true ||
-        trade.source === "manual_history" ||
-        (typeof trade.sol_amount === "number" && Math.abs(trade.sol_amount - 24.8111) < 0.001);
-
-      return !isExcludedLegacyItem;
+      return Number.isFinite(val) ? val : NaN;
     }
 
-    function getRealTradeDateKey(trade) {
-      if (!trade || typeof trade !== "object") return null;
-      const rawDate = trade.timestamp || trade.created_at || trade.date || trade.time;
+    function isLargeLegacySell(entry) {
+      if (!entry || typeof entry !== "object") return false;
+      const side = String(entry.side || "").toUpperCase();
+      const sz = getEntrySize(entry);
+      return entry.is_legacy === true || entry.source === "manual_history" || (side === "SELL" && Math.abs(sz - 24.8111) < 0.01);
+    }
+
+    function isReliableRealPnlTrade(entry) {
+      if (!entry || typeof entry !== "object") return false;
+      if (!entry.side) return false;
+      const pnl = getEntryPnl(entry);
+      return Number.isFinite(pnl);
+    }
+
+    function getRealTradeDateKey(entry) {
+      const rawDate = getEntryTime(entry);
       if (!rawDate) return null;
       const parsed = new Date(rawDate);
       if (Number.isNaN(parsed.getTime())) return null;
@@ -434,13 +458,20 @@
     function extractRealTradesArray(payload) {
       if (Array.isArray(payload)) return payload;
       if (!payload || typeof payload !== "object") return null;
+      if (Array.isArray(payload.recent_trades) && payload.recent_trades.length > 0) return payload.recent_trades;
+      if (Array.isArray(payload.trades) && payload.trades.length > 0) return payload.trades;
+      if (Array.isArray(payload.closed_trades) && payload.closed_trades.length > 0) return payload.closed_trades;
+      if (Array.isArray(payload.history) && payload.history.length > 0) return payload.history;
       if (Array.isArray(payload.recent_trades)) return payload.recent_trades;
       if (Array.isArray(payload.trades)) return payload.trades;
       if (Array.isArray(payload.closed_trades)) return payload.closed_trades;
+      if (Array.isArray(payload.history)) return payload.history;
       return null;
     }
 
-    function extractPricePoints(payload, trades) {
+    function extractPricePoints(payload, entries) {
+      const pts = [];
+
       if (payload && typeof payload === "object") {
         const rawSeries = Array.isArray(payload.price_history)
           ? payload.price_history
@@ -448,37 +479,42 @@
           ? payload.prices
           : null;
         if (rawSeries) {
-          return rawSeries
-            .map((item) => {
-              if (typeof item === "number" && Number.isFinite(item)) return { price: item };
-              if (item && typeof item === "object") {
-                const p = typeof item.price === "number" ? item.price : item.close;
-                if (typeof p === "number" && Number.isFinite(p)) {
-                  return { timestamp: item.timestamp || item.time || item.date, price: p };
-                }
+          for (const item of rawSeries) {
+            if (typeof item === "number" && Number.isFinite(item)) {
+              pts.push({ price: item });
+            } else if (item && typeof item === "object") {
+              const p = typeof item.price === "number" ? item.price : item.close;
+              if (typeof p === "number" && Number.isFinite(p)) {
+                pts.push({ timestamp: getEntryTime(item), price: p });
               }
-              return null;
-            })
-            .filter(Boolean);
+            }
+          }
         }
       }
-      if (!Array.isArray(trades)) return [];
-      return trades
-        .map((t) => {
-          if (!t || typeof t !== "object") return null;
+
+      if (Array.isArray(entries)) {
+        for (const item of entries) {
+          if (!item || typeof item !== "object") continue;
           const p =
-            typeof t.price === "number" && Number.isFinite(t.price) && t.price > 0
-              ? t.price
-              : typeof t.fill_price === "number" && Number.isFinite(t.fill_price) && t.fill_price > 0
-              ? t.fill_price
+            typeof item.price === "number" && Number.isFinite(item.price) && item.price > 0
+              ? item.price
+              : typeof item.fill_price === "number" && Number.isFinite(item.fill_price) && item.fill_price > 0
+              ? item.fill_price
               : NaN;
-          if (!Number.isFinite(p)) return null;
-          return { timestamp: t.timestamp || t.created_at || t.date || t.time, price: p };
-        })
-        .filter(Boolean);
+          if (Number.isFinite(p)) {
+            pts.push({ timestamp: getEntryTime(item), price: p });
+          }
+        }
+      }
+
+      if (payload && typeof payload === "object" && typeof payload.price === "number" && Number.isFinite(payload.price)) {
+        pts.push({ timestamp: getEntryTime(payload), price: payload.price });
+      }
+
+      return pts;
     }
 
-    function buildBuyInvestmentsAndSellLadders(trades, options = {}) {
+    function buildBuyInvestmentsAndSellLadders(entries, options = {}) {
       const upStepsPct =
         Array.isArray(options.upStepsPct) && options.upStepsPct.length > 0
           ? options.upStepsPct
@@ -492,38 +528,26 @@
       let totalInvestedUsdt = 0;
       let totalBoughtSol = 0;
 
-      if (!Array.isArray(trades)) {
+      if (!Array.isArray(entries)) {
         return { buys: [], activeSellLevels: [], downtrendSellLevels: [], totalInvestedUsdt: 0, totalBoughtSol: 0 };
       }
 
-      for (const trade of trades) {
-        if (!trade || typeof trade !== "object") continue;
-        if (String(trade.side || trade.action || "").toUpperCase() !== "BUY") continue;
+      for (const entry of entries) {
+        if (!entry || typeof entry !== "object") continue;
+        if (String(entry.side || entry.action || "").toUpperCase() !== "BUY") continue;
 
-        const rawTime = trade.timestamp || trade.created_at || trade.date || trade.time;
+        const rawTime = getEntryTime(entry);
         const parsedDate = rawTime ? new Date(rawTime) : null;
         const timestampMs = parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate.getTime() : null;
         const localTime = timestampMs ? new Date(timestampMs).toLocaleString("hu-HU") : "Ismeretlen időpont";
 
-        const solAmount =
-          typeof trade.sol_amount === "number" && Number.isFinite(trade.sol_amount)
-            ? trade.sol_amount
-            : typeof trade.amount === "number" && Number.isFinite(trade.amount)
-            ? trade.amount
-            : 0;
-
-        let usdtAmount =
-          typeof trade.usdt_amount === "number" && Number.isFinite(trade.usdt_amount)
-            ? trade.usdt_amount
-            : typeof trade.cost_usdt === "number" && Number.isFinite(trade.cost_usdt)
-            ? trade.cost_usdt
-            : 0;
-
+        const solAmount = getEntrySize(entry);
+        let usdtAmount = getEntryUsdt(entry);
         let buyPrice =
-          typeof trade.price === "number" && Number.isFinite(trade.price) && trade.price > 0
-            ? trade.price
-            : typeof trade.fill_price === "number" && Number.isFinite(trade.fill_price) && trade.fill_price > 0
-            ? trade.fill_price
+          typeof entry.price === "number" && Number.isFinite(entry.price) && entry.price > 0
+            ? entry.price
+            : typeof entry.fill_price === "number" && Number.isFinite(entry.fill_price) && entry.fill_price > 0
+            ? entry.fill_price
             : 0;
 
         if (buyPrice <= 0 && usdtAmount > 0 && solAmount > 0) buyPrice = usdtAmount / solAmount;
@@ -539,11 +563,6 @@
                 stepIndex: idx + 1,
                 pct,
                 targetPrice: Number((buyPrice * (1 + pct / 100)).toFixed(4)),
-                estimatedSol: solAmount > 0 ? Number((solAmount / upStepsPct.length).toFixed(6)) : 0,
-                estimatedUsdt:
-                  solAmount > 0
-                    ? Number(((solAmount / upStepsPct.length) * buyPrice * (1 + pct / 100)).toFixed(4))
-                    : 0,
               }))
             : [];
 
@@ -553,11 +572,6 @@
                 stepIndex: idx + 1,
                 pct,
                 targetPrice: Number((buyPrice * (1 + pct / 100)).toFixed(4)),
-                estimatedSol: solAmount > 0 ? Number((solAmount / downtrendStepsPct.length).toFixed(6)) : 0,
-                estimatedUsdt:
-                  solAmount > 0
-                    ? Number(((solAmount / downtrendStepsPct.length) * buyPrice * (1 + pct / 100)).toFixed(4))
-                    : 0,
               }))
             : [];
 
@@ -584,13 +598,38 @@
       };
     }
 
-    function renderBuyInvestmentsAndSellLadders(trades, containerId = "buy-ladder-panel", options = {}) {
+    function updateSim() {
+      const slider = document.getElementById("simSlider");
+      const priceEl = document.getElementById("simPrice");
+      const totalEl = document.getElementById("simTotal");
+      if (!slider || !priceEl || !totalEl) return;
+
+      const simPrice = Number(slider.value) || 0;
+      const ladder = buildBuyInvestmentsAndSellLadders(latestRealTrades);
+      const solQty =
+        ladder.totalBoughtSol > 0
+          ? ladder.totalBoughtSol
+          : latestRealPayload && typeof latestRealPayload.free_crypto === "number"
+          ? latestRealPayload.free_crypto
+          : 0;
+      priceEl.textContent = `$${simPrice.toFixed(2)}`;
+      totalEl.textContent = `$${(solQty * simPrice).toFixed(2)}`;
+    }
+
+    function renderBuyInvestmentsAndSellLadders(entries, containerId = "buy-ladder-panel", options = {}) {
       const container = document.getElementById(containerId);
       if (!container) return;
 
-      const summary = buildBuyInvestmentsAndSellLadders(trades, options);
+      const summary = buildBuyInvestmentsAndSellLadders(entries, options);
       if (summary.buys.length === 0) {
-        container.innerHTML = `<div class="notice-box"><strong>Nincs BUY kötés:</strong> Még nem rögzített a robot vásárlási pontot.</div>`;
+        const sells = Array.isArray(entries)
+          ? entries.filter((e) => e && String(e.side || "").toUpperCase() === "SELL")
+          : [];
+        const sellInfo =
+          sells.length > 0
+            ? ` (Legutóbbi SELL: ${getEntrySize(sells[sells.length - 1]).toFixed(4)} SOL @ $${Number(sells[sells.length - 1].price || 0).toFixed(4)}, reason: ${sells[sells.length - 1].reason || "-"})`
+            : "";
+        container.innerHTML = `<div class="notice-box"><strong>Nincs nyitott BUY pozíció:</strong> Jelenleg nincs rögzített vásárlási tétel${sellInfo}.</div>`;
         return;
       }
 
@@ -654,7 +693,7 @@
       `;
     }
 
-    function renderTrendChartWithBuysAndSellLadders(canvasId, pricePoints, trades, options = {}) {
+    function renderTrendChartWithBuysAndSellLadders(canvasId, pricePoints, entries, options = {}) {
       const canvas = document.getElementById(canvasId);
       if (!canvas || typeof canvas.getContext !== "function") return;
       const ctx = canvas.getContext("2d");
@@ -668,7 +707,7 @@
       const validPoints = Array.isArray(pricePoints)
         ? pricePoints.filter((p) => p && typeof p.price === "number" && Number.isFinite(p.price))
         : [];
-      const ladderData = buildBuyInvestmentsAndSellLadders(trades, options);
+      const ladderData = buildBuyInvestmentsAndSellLadders(entries, options);
       const latestBuy = ladderData.buys.length > 0 ? ladderData.buys[ladderData.buys.length - 1] : null;
 
       const levelPrices = [];
@@ -688,7 +727,7 @@
 
       const minP = Math.min(...allPrices);
       const maxP = Math.max(...allPrices);
-      const padX = 52;
+      const padX = 56;
       const padY = 24;
       const plotW = Math.max(10, width - padX * 2);
       const plotH = Math.max(10, height - padY * 2);
@@ -696,6 +735,13 @@
 
       const toY = (price) => padY + plotH - ((price - minP) / spanP) * plotH;
       const toX = (idx, total) => (total <= 1 ? padX + plotW / 2 : padX + (idx / (total - 1)) * plotW);
+
+      ctx.save();
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "11px ui-monospace, monospace";
+      ctx.fillText(`$${maxP.toFixed(2)}`, 8, padY + 4);
+      ctx.fillText(`$${minP.toFixed(2)}`, 8, padY + plotH);
+      ctx.restore();
 
       if (latestBuy && latestBuy.buyPrice > 0) {
         const drawLevel = (price, label, color, dashed) => {
@@ -722,7 +768,7 @@
 
       if (validPoints.length > 0) {
         ctx.save();
-        ctx.strokeStyle = "#f8fafc";
+        ctx.strokeStyle = "#38bdf8";
         ctx.lineWidth = 2;
         ctx.beginPath();
         validPoints.forEach((pt, idx) => {
@@ -734,38 +780,9 @@
         ctx.stroke();
         ctx.restore();
       }
-
-      for (const buy of ladderData.buys) {
-        if (buy.buyPrice <= 0) continue;
-        let markerX = padX + plotW / 2;
-        if (validPoints.length > 0 && buy.timestampMs > 0) {
-          let bestIdx = 0;
-          let bestDiff = Infinity;
-          validPoints.forEach((pt, i) => {
-            const ptMs = pt.timestamp ? new Date(pt.timestamp).getTime() : NaN;
-            if (!Number.isNaN(ptMs)) {
-              const diff = Math.abs(ptMs - buy.timestampMs);
-              if (diff < bestDiff) {
-                bestDiff = diff;
-                bestIdx = i;
-              }
-            }
-          });
-          markerX = toX(bestIdx, validPoints.length);
-        }
-        const markerY = toY(buy.buyPrice);
-        ctx.save();
-        ctx.fillStyle = "#10b981";
-        ctx.beginPath();
-        ctx.arc(markerX, markerY, 5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.font = "11px system-ui, sans-serif";
-        ctx.fillText(`BUY $${buy.buyPrice.toFixed(2)}`, markerX + 7, markerY + 4);
-        ctx.restore();
-      }
     }
 
-    function renderRealTradesTab(trades, sourceName = "ismeretlen forrás", containerId = "trades-tab-content") {
+    function renderRealTradesTab(entries, sourceName = "ismeretlen forrás", containerId = "trades-tab-content") {
       const container = document.getElementById(containerId);
       const updatedText = document.getElementById("updatedText");
       if (updatedText) {
@@ -773,57 +790,64 @@
       }
       if (!container) return;
 
-      if (!Array.isArray(trades) || trades.length === 0) {
-        container.innerHTML = `<div class="notice-box"><strong>Nincs valós kötésadat:</strong> A(z) <code>${sourceName}</code> forrás nem tartalmaz kötéssorokat.</div>`;
+      if (!Array.isArray(entries) || entries.length === 0) {
+        container.innerHTML = `<div class="notice-box"><strong>Nincs valós kötésadat:</strong> A(z) <code>${sourceName}</code> forrás nem tartalmaz bejegyzéseket.</div>`;
         return;
       }
 
-      const dailyRealPnl = new Map();
+      const dailyPnl = new Map();
       const groupedRows = new Map();
 
-      for (const trade of trades) {
-        if (!trade || typeof trade !== "object") continue;
-        const dateKey = getRealTradeDateKey(trade) || "ismeretlen-datum";
-        const isClean = isReliableRealPnlTrade(trade);
-        const pnlValue =
-          typeof trade.pnl_usdt === "number"
-            ? trade.pnl_usdt
-            : typeof trade.realized_pnl_usdt === "number"
-            ? trade.realized_pnl_usdt
-            : NaN;
+      for (const entry of entries) {
+        if (!entry || typeof entry !== "object") continue;
+        const dateKey = getRealTradeDateKey(entry) || "ismeretlen-datum";
+        const pnlValue = getEntryPnl(entry);
         const hasValidPnl = Number.isFinite(pnlValue);
+        const largeSell = isLargeLegacySell(entry);
+        const isCleanTrade = isReliableRealPnlTrade(entry) && !largeSell;
 
-        if (isClean && dateKey !== "ismeretlen-datum") {
-          const prev = dailyRealPnl.get(dateKey) || 0;
-          dailyRealPnl.set(dateKey, Number((prev + pnlValue).toFixed(4)));
+        if (isCleanTrade && dateKey !== "ismeretlen-datum") {
+          const prev = dailyPnl.get(dateKey) || 0;
+          dailyPnl.set(dateKey, Number((prev + pnlValue).toFixed(4)));
         }
 
         if (!groupedRows.has(dateKey)) groupedRows.set(dateKey, []);
 
-        const solVal =
-          typeof trade.sol_amount === "number" && Number.isFinite(trade.sol_amount)
-            ? trade.sol_amount.toFixed(4)
-            : typeof trade.amount === "number" && Number.isFinite(trade.amount)
-            ? trade.amount.toFixed(4)
-            : "-";
+        const sideOrStatus = entry.side
+          ? `${entry.side}${entry.reason ? ` (${entry.reason})` : ""}`
+          : entry.status
+          ? `Állapot: ${entry.status}`
+          : "Bejegyzés";
+
+        const sz = getEntrySize(entry);
+        const solVal = sz > 0 ? sz.toFixed(4) : "-";
 
         const usdtVal =
-          typeof trade.usdt_amount === "number" && Number.isFinite(trade.usdt_amount)
-            ? trade.usdt_amount.toFixed(2)
-            : typeof trade.cost_usdt === "number" && Number.isFinite(trade.cost_usdt)
-            ? trade.cost_usdt.toFixed(2)
+          getEntryUsdt(entry) > 0
+            ? getEntryUsdt(entry).toFixed(2)
+            : typeof entry.total_usd === "number" && Number.isFinite(entry.total_usd)
+            ? `${entry.total_usd.toFixed(2)} (portfólió)`
             : "-";
 
         const pnlText = hasValidPnl
-          ? `${pnlValue >= 0 ? "+" : "-"}$${Math.abs(pnlValue).toFixed(4)}`
+          ? `${pnlValue >= 0 ? "+" : "-"}$${Math.abs(pnlValue).toFixed(2)}`
           : "-";
 
+        const statusLabel = largeSell
+          ? "Kiugró SELL (24.81 SOL)"
+          : isCleanTrade
+          ? "Tiszta PnL"
+          : entry.status === "TARTÁS"
+          ? "Állapot / árfolyam"
+          : "Nincs PnL";
+
         groupedRows.get(dateKey).push({
-          side: trade.side || "-",
+          sideOrStatus,
           solVal,
           usdtVal,
           pnlText,
-          isClean,
+          statusLabel,
+          isExcluded: largeSell,
         });
       }
 
@@ -831,7 +855,7 @@
       let html = "";
 
       for (const dateKey of sortedDates) {
-        const daySum = dailyRealPnl.get(dateKey) ?? 0;
+        const daySum = dailyPnl.get(dateKey) ?? 0;
         const sign = daySum > 0 ? "+" : daySum < 0 ? "-" : "";
         const formattedDayPnl = `${sign}$${Math.abs(daySum).toFixed(2)}`;
         const badgeClass = daySum > 0 ? "pnl-profit" : daySum < 0 ? "pnl-deficit" : "pnl-neutral";
@@ -840,12 +864,12 @@
           .get(dateKey)
           .map(
             (r) => `
-              <tr class="${r.isClean ? "" : "trade-excluded"}">
-                <td>${r.side}</td>
+              <tr class="${r.isExcluded ? "trade-excluded" : ""}">
+                <td>${r.sideOrStatus}</td>
                 <td>${r.solVal}</td>
                 <td>${r.usdtVal}</td>
                 <td>${r.pnlText}</td>
-                <td>${r.isClean ? "Tiszta PnL" : "Szűrt / előzmény"}</td>
+                <td>${r.statusLabel}</td>
               </tr>
             `
           )
@@ -855,16 +879,16 @@
           <div class="day-pnl-group">
             <div class="day-pnl-header">
               <span>${dateKey}</span>
-              <span class="${badgeClass}">${formattedDayPnl}</span>
+              <span class="${badgeClass}">Tiszta napi PnL: ${formattedDayPnl}</span>
             </div>
             <table>
               <thead>
                 <tr>
-                  <th>Irány</th>
+                  <th>Típus / ok</th>
                   <th>SOL</th>
                   <th>USDT</th>
                   <th>PnL</th>
-                  <th>Státusz</th>
+                  <th>Megjegyzés</th>
                 </tr>
               </thead>
               <tbody>${rowsHtml}</tbody>
@@ -876,24 +900,63 @@
       container.innerHTML = html;
     }
 
-    function updateOverviewFromPayload(payload) {
-      if (!payload || typeof payload !== "object") return;
+    function updateOverviewFromPayload(payload, entries) {
       const totalEl = document.getElementById("totalUsd");
       const freeUsdtEl = document.getElementById("freeUsdt");
       const freeSolEl = document.getElementById("freeSol");
       const solPriceEl = document.getElementById("solPrice");
+      const entrySubEl = document.getElementById("entrySub");
+      const statusDetailEl = document.getElementById("statusDetail");
+      const badgeEl = document.getElementById("statusBadge");
 
-      if (typeof payload.total_usd === "number" && totalEl) {
-        totalEl.textContent = `$${payload.total_usd.toFixed(2)}`;
+      const list = Array.isArray(entries) ? entries : [];
+      const lastEntryWithTotal = [...list].reverse().find((e) => e && typeof e.total_usd === "number");
+      const lastEntryWithPrice = [...list].reverse().find((e) => e && typeof e.price === "number");
+      const lastEntryWithStatus = [...list].reverse().find((e) => e && e.status);
+
+      const totalUsd =
+        payload && typeof payload.total_usd === "number"
+          ? payload.total_usd
+          : lastEntryWithTotal
+          ? lastEntryWithTotal.total_usd
+          : null;
+
+      const price =
+        payload && typeof payload.price === "number"
+          ? payload.price
+          : lastEntryWithPrice
+          ? lastEntryWithPrice.price
+          : null;
+
+      if (typeof totalUsd === "number" && totalEl) {
+        totalEl.textContent = `$${totalUsd.toFixed(2)}`;
       }
-      if (typeof payload.free_usdt === "number" && freeUsdtEl) {
+      if (payload && typeof payload.free_usdt === "number" && freeUsdtEl) {
         freeUsdtEl.textContent = `$${payload.free_usdt.toFixed(2)}`;
       }
-      if (typeof payload.free_crypto === "number" && freeSolEl) {
+      if (payload && typeof payload.free_crypto === "number" && freeSolEl) {
         freeSolEl.textContent = `${payload.free_crypto.toFixed(4)} SOL`;
       }
-      if (typeof payload.price === "number" && solPriceEl) {
-        solPriceEl.textContent = `$${payload.price.toFixed(2)}`;
+      if (typeof price === "number" && solPriceEl) {
+        solPriceEl.textContent = `$${price.toFixed(2)}`;
+      }
+      if (payload && typeof payload.entry_price === "number" && entrySubEl) {
+        entrySubEl.textContent = `Bekerülés: $${payload.entry_price.toFixed(2)}`;
+      } else if (entrySubEl) {
+        entrySubEl.textContent = "Bekerülés: nincs nyitott pozíció";
+      }
+
+      const detailText =
+        (payload && (payload.status_detail || payload.status)) ||
+        (lastEntryWithStatus ? `Utolsó állapot: ${lastEntryWithStatus.status}` : null);
+
+      if (detailText && statusDetailEl) {
+        statusDetailEl.textContent = String(detailText);
+      }
+      if (payload && payload.status && badgeEl) {
+        badgeEl.textContent = String(payload.status).slice(0, 12);
+      } else if (detailText && badgeEl) {
+        badgeEl.textContent = String(detailText).slice(0, 12);
       }
     }
 
@@ -902,11 +965,57 @@
       latestRealTrades = extractRealTradesArray(payload) || [];
       const pricePoints = extractPricePoints(payload, latestRealTrades);
 
-      updateOverviewFromPayload(payload);
+      updateOverviewFromPayload(payload, latestRealTrades);
       renderRealTradesTab(latestRealTrades, sourceName, "trades-tab-content");
       renderBuyInvestmentsAndSellLadders(latestRealTrades, "buy-ladder-panel");
       renderTrendChartWithBuysAndSellLadders("trend-ladder-canvas", pricePoints, latestRealTrades);
       updateSim();
+    }
+
+    async function loadPionexRealFiles() {
+      const container = document.getElementById("trades-tab-content");
+      const textarea = document.getElementById("real-trades-json-input");
+      const updatedText = document.getElementById("updatedText");
+
+      let statusData = null;
+      let historyData = null;
+
+      try {
+        const statusResp = await fetch("./pionex_status.json", { cache: "no-store" });
+        if (statusResp.ok) statusData = await statusResp.json();
+      } catch (_) {}
+
+      try {
+        const historyResp = await fetch("./pionex_history.json", { cache: "no-store" });
+        if (historyResp.ok) historyData = await historyResp.json();
+      } catch (_) {}
+
+      if (!statusData && !historyData) {
+        if (updatedText) {
+          updatedText.textContent = "Forrás: pionex_status.json / pionex_history.json nem érhető el";
+        }
+        if (container) {
+          container.innerHTML = `<div class="notice-box"><strong>Nem található adat:</strong> A <code>pionex_status.json</code> és <code>pionex_history.json</code> fájlok nem érhetők el.</div>`;
+        }
+        return false;
+      }
+
+      const tradesFromHistory = extractRealTradesArray(historyData) || [];
+      const tradesFromStatus = extractRealTradesArray(statusData) || [];
+      const mergedTrades = tradesFromHistory.length > 0 ? tradesFromHistory : tradesFromStatus;
+
+      const combinedPayload = {
+        ...(typeof historyData === "object" && !Array.isArray(historyData) ? historyData : {}),
+        ...(typeof statusData === "object" && !Array.isArray(statusData) ? statusData : {}),
+        recent_trades: mergedTrades,
+      };
+
+      if (textarea) {
+        textarea.value = JSON.stringify(combinedPayload, null, 2);
+      }
+
+      refreshAllRobotViews(combinedPayload, "pionex_status.json + pionex_history.json");
+      return true;
     }
 
     async function loadRealTradesFromUrl(url) {
@@ -918,7 +1027,7 @@
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         const trades = extractRealTradesArray(data);
-        if (!trades) throw new Error("Nincs felismerhető kötéslista a JSON-ban.");
+        if (!trades) throw new Error("Nincs felismerhető lista a JSON-ban.");
 
         if (textarea) textarea.value = JSON.stringify(data, null, 2);
         refreshAllRobotViews(data, url);
@@ -939,7 +1048,10 @@
     }
 
     async function loadRealTradesFromKnownSources() {
-      const candidates = ["./trades.json", "./data/trades.json", "./recent_trades.json", "/api/trades", "/api/state"];
+      const loadedPionex = await loadPionexRealFiles();
+      if (loadedPionex) return;
+
+      const candidates = ["./pionex_status.json", "./pionex_history.json", "./trades.json", "/api/trades", "/api/state"];
       for (const candidate of candidates) {
         const ok = await loadRealTradesFromUrl(candidate);
         if (ok) return;
