@@ -279,7 +279,7 @@
       <div class="card">
         <div class="kpi-label">SOL ár</div>
         <div class="kpi-value" id="solPrice">-</div>
-        <div class="kpi-sub" id="entrySub">Bekerülés: -</div>
+        <div class="kpi-sub" id="entrySub">Referencia vétel: $70.03 (11/26)</div>
       </div>
       <div class="card">
         <div class="kpi-label">Szabad USDT / SOL</div>
@@ -325,8 +325,12 @@
         <strong id="simPrice">$71.83</strong>
       </div>
       <div class="sim-stat">
-        <span style="color: var(--muted);">Becsült pozíció érték</span>
+        <span style="color: var(--muted);">Becsült SOL egyenleg érték</span>
         <strong id="simTotal">$0.00</strong>
+      </div>
+      <div class="sim-stat">
+        <span style="color: var(--muted);">Becsült PnL ($70.03 ref. vételhez)</span>
+        <strong id="simPnl">$0.00</strong>
       </div>
     </div>
   </section>
@@ -347,6 +351,7 @@
   </nav>
 
   <script>
+    const REFERENCE_BUY_PRICE = 70.03;
     let latestRealPayload = null;
     let latestRealEntries = [];
 
@@ -483,19 +488,34 @@
       return pts;
     }
 
+    function getEntryPriceForDisplay(payload) {
+      if (payload && typeof payload.entry_price === "number" && Number.isFinite(payload.entry_price) && payload.entry_price > 0) {
+        return { price: payload.entry_price, isRef: false };
+      }
+      return { price: REFERENCE_BUY_PRICE, isRef: true };
+    }
+
     function updateSim() {
       const slider = document.getElementById("simSlider");
       const priceEl = document.getElementById("simPrice");
       const totalEl = document.getElementById("simTotal");
-      if (!slider || !priceEl || !totalEl) return;
+      const pnlEl = document.getElementById("simPnl");
+      if (!slider || !priceEl || !totalEl || !pnlEl) return;
 
       const simPrice = Number(slider.value) || 0;
       const solQty =
         latestRealPayload && typeof latestRealPayload.free_crypto === "number"
           ? latestRealPayload.free_crypto
           : 0;
+      const entryInfo = getEntryPriceForDisplay(latestRealPayload);
+      const valNow = solQty * simPrice;
+      const pnlVal = solQty * (simPrice - entryInfo.price);
+      const sign = pnlVal > 0 ? "+" : pnlVal < 0 ? "-" : "";
+
       priceEl.textContent = `$${simPrice.toFixed(2)}`;
-      totalEl.textContent = `$${(solQty * simPrice).toFixed(2)}`;
+      totalEl.textContent = `$${valNow.toFixed(2)}`;
+      pnlEl.textContent = `${sign}$${Math.abs(pnlVal).toFixed(2)}`;
+      pnlEl.className = pnlVal > 0 ? "pnl-profit" : pnlVal < 0 ? "pnl-deficit" : "pnl-neutral";
     }
 
     function renderTrendChart(canvasId, deltaId, statsId, payload, entries) {
@@ -550,7 +570,6 @@
       const toX = (i) => (pts.length <= 1 ? padLeft + plotW / 2 : padLeft + (i / (pts.length - 1)) * plotW);
       const toY = (p) => padTop + plotH - ((p - lo) / span) * plotH;
 
-      // Rács és Y tengely
       ctx.save();
       ctx.strokeStyle = "rgba(148, 163, 184, 0.13)";
       ctx.lineWidth = 1;
@@ -568,7 +587,6 @@
       }
       ctx.restore();
 
-      // Átlagvonal
       const avgY = toY(avgP);
       ctx.save();
       ctx.strokeStyle = "rgba(148, 163, 184, 0.42)";
@@ -584,7 +602,6 @@
       ctx.fillText(`Átlag $${avgP.toFixed(2)}`, padLeft + 6, avgY - 4);
       ctx.restore();
 
-      // Terület és trendvonal
       const strokeColor = deltaPct >= 0 ? "#10b981" : "#38bdf8";
       ctx.save();
       const grad = ctx.createLinearGradient(0, padTop, 0, padTop + plotH);
@@ -610,7 +627,6 @@
       ctx.stroke();
       ctx.restore();
 
-      // Pontok (SELL és utolsó pont)
       pts.forEach((p, i) => {
         const x = toX(i);
         const y = toY(p.price);
@@ -632,7 +648,6 @@
         }
       });
 
-      // X tengely időbélyegek
       const startTxt = formatTimeLabel(pts[0].timestamp);
       const endTxt = formatTimeLabel(pts[pts.length - 1].timestamp);
       ctx.save();
@@ -817,23 +832,34 @@
       if (typeof price === "number" && solPriceEl) {
         solPriceEl.textContent = `$${price.toFixed(2)}`;
       }
-      if (payload && typeof payload.entry_price === "number" && entrySubEl) {
-        entrySubEl.textContent = `Bekerülés: $${payload.entry_price.toFixed(2)}`;
-      } else if (entrySubEl) {
-        entrySubEl.textContent = "Bekerülés: -";
+
+      const entryInfo = getEntryPriceForDisplay(payload);
+      if (entrySubEl) {
+        if (!entryInfo.isRef) {
+          entrySubEl.textContent = `Bekerülés: $${entryInfo.price.toFixed(2)}`;
+        } else if (typeof price === "number") {
+          const diffPct = ((price - entryInfo.price) / entryInfo.price) * 100;
+          const sign = diffPct >= 0 ? "+" : "";
+          entrySubEl.textContent = `Ref. vétel: $${entryInfo.price.toFixed(2)} (${sign}${diffPct.toFixed(2)}%) • Nincs nyitott pozíció`;
+        } else {
+          entrySubEl.textContent = `Ref. vétel: $${entryInfo.price.toFixed(2)} (11/26)`;
+        }
       }
 
-      const detailText =
+      const hasPos = payload && payload.has_position === true;
+      const baseDetail =
         (payload && (payload.status_detail || payload.status)) ||
-        (lastEntryWithStatus ? `Utolsó állapot: ${lastEntryWithStatus.status}` : null);
+        (lastEntryWithStatus ? `Utolsó állapot: ${lastEntryWithStatus.status}` : "Nincs betöltött valós állapot");
 
-      if (detailText && statusDetailEl) {
-        statusDetailEl.textContent = String(detailText);
+      if (statusDetailEl) {
+        statusDetailEl.textContent = hasPos
+          ? String(baseDetail)
+          : `${baseDetail} • Nincs robot-pozíció (szabad USDT: $${Number(payload?.free_usdt || 0).toFixed(2)})`;
       }
-      if (payload && payload.status && badgeEl) {
-        badgeEl.textContent = String(payload.status).slice(0, 12);
-      } else if (detailText && badgeEl) {
-        badgeEl.textContent = String(detailText).slice(0, 12);
+
+      const rawBadge = hasPos ? "POZÍCIÓ" : (payload && payload.status) || "VÁRAKOZÁS";
+      if (badgeEl) {
+        badgeEl.textContent = String(rawBadge).slice(0, 14);
       }
     }
 
