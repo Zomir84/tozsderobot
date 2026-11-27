@@ -91,6 +91,26 @@
       margin-bottom: 12px;
     }
 
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .pnl-box {
+      background: var(--card-inner);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+
+    .pnl-box-val {
+      font-size: 1.05rem;
+      font-weight: 800;
+      margin-top: 4px;
+    }
+
     .kpi-label {
       font-size: 0.76rem;
       color: var(--muted);
@@ -344,6 +364,27 @@
 
     <div class="card">
       <div class="chart-head">
+        <div class="section-title">Nyereség (realizált PnL)</div>
+        <div id="pnlPeriodHint" class="kpi-sub">-</div>
+      </div>
+      <div class="grid-3">
+        <div class="pnl-box">
+          <div class="kpi-label">Napi</div>
+          <div id="pnlDailyVal" class="pnl-box-val pnl-neutral">$0.00</div>
+        </div>
+        <div class="pnl-box">
+          <div class="kpi-label">Heti</div>
+          <div id="pnlWeeklyVal" class="pnl-box-val pnl-neutral">$0.00</div>
+        </div>
+        <div class="pnl-box">
+          <div class="kpi-label">Havi</div>
+          <div id="pnlMonthlyVal" class="pnl-box-val pnl-neutral">$0.00</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="chart-head">
         <div class="section-title">SOL árfolyam-alakulás</div>
         <div id="overviewDelta" class="chart-delta pnl-neutral">-</div>
       </div>
@@ -465,6 +506,7 @@
     let latestRealEntries = [];
     let currentTradeFilter = "all";
     let includeArchive = false;
+    let latestSourceName = "pionex_status.json + pionex_history.json";
 
     function switchTab(tabName, btnElement) {
       document.querySelectorAll(".tab-view").forEach((el) => el.classList.remove("active"));
@@ -473,7 +515,9 @@
       if (target) target.classList.add("active");
       if (btnElement) btnElement.classList.add("active");
       if (tabName === "overview") {
-        renderTrendChart("overview-trend-canvas", "overviewDelta", "overviewChartStats", latestRealPayload, getMergedEntries());
+        const merged = getMergedEntries();
+        renderOverviewPnlBreakdown(latestRealPayload, merged);
+        renderTrendChart("overview-trend-canvas", "overviewDelta", "overviewChartStats", latestRealPayload, merged);
       } else if (tabName === "charts") {
         renderChartsTab(latestRealPayload, getMergedEntries());
       }
@@ -499,12 +543,11 @@
       const btn = document.getElementById("archiveBtn");
       if (btn) btn.classList.toggle("active", includeArchive);
       const merged = getMergedEntries();
+      renderOverviewPnlBreakdown(latestRealPayload, merged);
       renderRealTradesTab(merged, latestSourceName, "trades-tab-content");
       renderTrendChart("overview-trend-canvas", "overviewDelta", "overviewChartStats", latestRealPayload, merged);
       renderChartsTab(latestRealPayload, merged);
     }
-
-    let latestSourceName = "pionex_status.json + pionex_history.json";
 
     function getEntryTime(obj) {
       if (!obj || typeof obj !== "object") return null;
@@ -516,6 +559,102 @@
       const d = new Date(rawTime);
       if (Number.isNaN(d.getTime())) return String(rawTime).slice(0, 16);
       return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    }
+
+    function formatSignedUsd(val) {
+      const n = Number.isFinite(val) ? val : 0;
+      const sign = n > 0 ? "+" : n < 0 ? "-" : "";
+      return `${sign}$${Math.abs(n).toFixed(2)}`;
+    }
+
+    function getPnlColorClass(val) {
+      if (val > 0) return "pnl-profit";
+      if (val < 0) return "pnl-deficit";
+      return "pnl-neutral";
+    }
+
+    function startOfDay(dateObj) {
+      return new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate(), 0, 0, 0, 0);
+    }
+
+    function startOfWeekMonday(dateObj) {
+      const day = dateObj.getDay();
+      const diffToMonday = (day + 6) % 7;
+      return new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate() - diffToMonday, 0, 0, 0, 0);
+    }
+
+    function startOfMonth(dateObj) {
+      return new Date(dateObj.getFullYear(), dateObj.getMonth(), 1, 0, 0, 0, 0);
+    }
+
+    function renderOverviewPnlBreakdown(payload, entries) {
+      const dailyEl = document.getElementById("pnlDailyVal");
+      const weeklyEl = document.getElementById("pnlWeeklyVal");
+      const monthlyEl = document.getElementById("pnlMonthlyVal");
+      const hintEl = document.getElementById("pnlPeriodHint");
+      if (!dailyEl || !weeklyEl || !monthlyEl) return;
+
+      const list = Array.isArray(entries) ? entries : [];
+      const datedPnls = [];
+      let latestDate = null;
+
+      for (const entry of list) {
+        if (!entry || typeof entry !== "object") continue;
+        const pnl = getEntryPnl(entry);
+        if (!Number.isFinite(pnl)) continue;
+        const rawT = getEntryTime(entry);
+        const dt = rawT ? new Date(rawT) : null;
+        if (dt && !Number.isNaN(dt.getTime())) {
+          datedPnls.push({ dt, pnl });
+          if (!latestDate || dt.getTime() > latestDate.getTime()) {
+            latestDate = dt;
+          }
+        } else {
+          datedPnls.push({ dt: null, pnl });
+        }
+      }
+
+      const payloadTime = payload ? getEntryTime(payload) : null;
+      const parsedPayloadTime = payloadTime ? new Date(payloadTime) : null;
+      const refDate =
+        parsedPayloadTime && !Number.isNaN(parsedPayloadTime.getTime())
+          ? parsedPayloadTime
+          : latestDate || new Date();
+
+      const dayStart = startOfDay(refDate).getTime();
+      const weekStart = startOfWeekMonday(refDate).getTime();
+      const monthStart = startOfMonth(refDate).getTime();
+
+      let dailySum = 0;
+      let weeklySum = 0;
+      let monthlySum = 0;
+
+      for (const item of datedPnls) {
+        if (!item.dt) {
+          dailySum += item.pnl;
+          weeklySum += item.pnl;
+          monthlySum += item.pnl;
+          continue;
+        }
+        const t = item.dt.getTime();
+        if (t >= dayStart) dailySum += item.pnl;
+        if (t >= weekStart) weeklySum += item.pnl;
+        if (t >= monthStart) monthlySum += item.pnl;
+      }
+
+      dailyEl.textContent = formatSignedUsd(dailySum);
+      dailyEl.className = `pnl-box-val ${getPnlColorClass(dailySum)}`;
+
+      weeklyEl.textContent = formatSignedUsd(weeklySum);
+      weeklyEl.className = `pnl-box-val ${getPnlColorClass(weeklySum)}`;
+
+      monthlyEl.textContent = formatSignedUsd(monthlySum);
+      monthlyEl.className = `pnl-box-val ${getPnlColorClass(monthlySum)}`;
+
+      if (hintEl) {
+        const dayKey = `${refDate.getFullYear()}-${String(refDate.getMonth() + 1).padStart(2, "0")}-${String(refDate.getDate()).padStart(2, "0")}`;
+        hintEl.textContent = `Nap: ${dayKey}`;
+      }
     }
 
     function getEntrySize(entry) {
@@ -655,12 +794,11 @@
       const entryInfo = getEntryPriceForDisplay(latestRealPayload);
       const valNow = solQty * simPrice;
       const pnlVal = solQty * (simPrice - entryInfo.price);
-      const sign = pnlVal > 0 ? "+" : pnlVal < 0 ? "-" : "";
 
       priceEl.textContent = `$${simPrice.toFixed(2)}`;
       totalEl.textContent = `$${valNow.toFixed(2)}`;
-      pnlEl.textContent = `${sign}$${Math.abs(pnlVal).toFixed(2)}`;
-      pnlEl.className = pnlVal > 0 ? "pnl-profit" : pnlVal < 0 ? "pnl-deficit" : "pnl-neutral";
+      pnlEl.textContent = formatSignedUsd(pnlVal);
+      pnlEl.className = getPnlColorClass(pnlVal);
     }
 
     function renderTrendChart(canvasId, deltaId, statsId, payload, entries) {
@@ -697,7 +835,7 @@
       if (deltaEl) {
         const sign = deltaPct > 0 ? "+" : deltaPct < 0 ? "-" : "";
         deltaEl.textContent = `$${lastP.toFixed(2)} (${sign}${Math.abs(deltaPct).toFixed(2)}%)`;
-        deltaEl.className = `chart-delta ${deltaPct > 0 ? "pnl-profit" : deltaPct < 0 ? "pnl-deficit" : "pnl-neutral"}`;
+        deltaEl.className = `chart-delta ${getPnlColorClass(deltaPct)}`;
       }
 
       const padLeft = 56;
@@ -848,9 +986,8 @@
       const diffUsd = lastV - firstV;
 
       if (deltaEl) {
-        const sign = diffUsd > 0 ? "+" : diffUsd < 0 ? "-" : "";
-        deltaEl.textContent = `$${lastV.toFixed(2)} (${sign}$${Math.abs(diffUsd).toFixed(2)})`;
-        deltaEl.className = `chart-delta ${diffUsd > 0 ? "pnl-profit" : diffUsd < 0 ? "pnl-deficit" : "pnl-neutral"}`;
+        deltaEl.textContent = `$${lastV.toFixed(2)} (${formatSignedUsd(diffUsd)})`;
+        deltaEl.className = `chart-delta ${getPnlColorClass(diffUsd)}`;
       }
 
       const padLeft = 56;
@@ -977,9 +1114,8 @@
       }
 
       if (badgeEl) {
-        const sign = totalPnl > 0 ? "+" : totalPnl < 0 ? "-" : "";
-        badgeEl.textContent = `${sign}$${Math.abs(totalPnl).toFixed(2)}`;
-        badgeEl.className = `chart-delta ${totalPnl > 0 ? "pnl-profit" : totalPnl < 0 ? "pnl-deficit" : "pnl-neutral"}`;
+        badgeEl.textContent = formatSignedUsd(totalPnl);
+        badgeEl.className = `chart-delta ${getPnlColorClass(totalPnl)}`;
       }
 
       if (pnlItems.length === 0) {
@@ -1025,8 +1161,7 @@
 
         ctx.fillStyle = "#f8fafc";
         ctx.font = "10px ui-monospace, monospace";
-        const pSign = item.pnl >= 0 ? "+" : "-";
-        const pText = `${pSign}$${Math.abs(item.pnl).toFixed(2)}`;
+        const pText = formatSignedUsd(item.pnl);
         const tw = ctx.measureText(pText).width;
         ctx.fillText(pText, cx - tw / 2, item.pnl >= 0 ? y - 5 : y + Math.max(2, h) + 12);
 
@@ -1038,7 +1173,7 @@
 
       if (statsEl) {
         statsEl.innerHTML = `
-          <span>Összes realizált PnL: <strong>${totalPnl >= 0 ? "+" : "-"}$${Math.abs(totalPnl).toFixed(2)}</strong></span>
+          <span>Összes realizált PnL: <strong>${formatSignedUsd(totalPnl)}</strong></span>
           <span>Tételek: <strong>${pnlItems.length}</strong></span>
         `;
       }
@@ -1100,9 +1235,7 @@
             ? `${entry.total_usd.toFixed(2)} (portfólió)`
             : "-";
 
-        const pnlText = hasValidPnl
-          ? `${pnlValue >= 0 ? "+" : "-"}$${Math.abs(pnlValue).toFixed(2)}`
-          : "-";
+        const pnlText = hasValidPnl ? formatSignedUsd(pnlValue) : "-";
 
         const noteText =
           entry.source === "pionex_archive"
@@ -1127,9 +1260,8 @@
 
       for (const dateKey of sortedDates) {
         const daySum = dailyPnl.get(dateKey) ?? 0;
-        const sign = daySum > 0 ? "+" : daySum < 0 ? "-" : "";
-        const formattedDayPnl = `${sign}$${Math.abs(daySum).toFixed(2)}`;
-        const badgeClass = daySum > 0 ? "pnl-profit" : daySum < 0 ? "pnl-deficit" : "pnl-neutral";
+        const formattedDayPnl = formatSignedUsd(daySum);
+        const badgeClass = getPnlColorClass(daySum);
 
         const rowsHtml = groupedRows
           .get(dateKey)
@@ -1249,6 +1381,7 @@
 
       const merged = getMergedEntries();
       updateOverviewFromPayload(payload, merged);
+      renderOverviewPnlBreakdown(payload, merged);
       renderRealTradesTab(merged, sourceName, "trades-tab-content");
       renderTrendChart("overview-trend-canvas", "overviewDelta", "overviewChartStats", latestRealPayload, merged);
       renderChartsTab(latestRealPayload, merged);
