@@ -308,7 +308,6 @@ def _collect_order_fills(order_id, expected_size=None, ref_price=None):
             px = float(f.get("price") or ref_price or 0.0)
             raw_quote = float(f.get("quoteAmount") or f.get("amount") or 0.0)
 
-            # Ha a size értéke hibásan quoteAmount nagyságrendű, korrigáljuk
             if expected_size and expected_size > 0 and raw_qty > expected_size * 10 and px > 0:
                 qty = raw_qty / px
                 quote_amt = raw_qty
@@ -472,14 +471,24 @@ def sync_git_safe(runtime_state, now_ts):
                 timeout=20,
             )
 
-        subprocess.run(
-            ["git", "pull", "--rebase", "origin", "main"],
-            cwd=BASE_DIR,
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        try:
+            subprocess.run(
+                ["git", "pull", "--rebase", "origin", "main"],
+                cwd=BASE_DIR,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except Exception:
+            subprocess.run(
+                ["git", "rebase", "--abort"],
+                cwd=BASE_DIR,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+
         subprocess.run(
             ["git", "push", "origin", "main"],
             cwd=BASE_DIR,
@@ -519,7 +528,6 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
     last_sold_crypto = float(runtime_state.get("last_sold_crypto") or 0.0)
     sell_cooldown_ok = (now_ts - last_sell_ts) >= SELL_COOLDOWN_SECONDS
 
-    # Megakadályozzuk, hogy eladás után azonnal ugyanazt a maradék egyenleget újra átvegye és eladja
     unchanged_after_sell = (
         last_sold_crypto > 0
         and abs(free_crypto - last_sold_crypto) <= 0.001
@@ -555,7 +563,6 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
 
     buy_cooldown_ok = (now_ts - last_sell_ts) >= BUY_COOLDOWN_SECONDS
 
-    # 1. VÉTELI LOGIKA
     if (
         not has_position
         and price > 0
@@ -608,7 +615,6 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
                 print(f"[TRADE] BUY hiba: {exc}")
                 send_throttled_telegram(runtime_state, "trade_buy_err", f"BUY hiba: {exc}", now_ts)
 
-    # 2. ELADÁSI LOGIKA (Stop-Loss / Trailing Stop)
     elif has_position and price > 0 and entry_price and sell_cooldown_ok:
         ep = float(entry_price)
         cur_high = max(float(highest_price or ep), price)
@@ -631,7 +637,11 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
             sell_reason = f"TRAILING_STOP ({cur_profit_pct:.2f}%)"
 
         if sell_reason:
-            sell_qty = round(min(float(entry_size or free_crypto), free_crypto), 6) if free_crypto > 0 else round(float(entry_size or 0.0), 6)
+            sell_qty = (
+                round(min(float(entry_size or free_crypto), free_crypto), 6)
+                if free_crypto > 0
+                else round(float(entry_size or 0.0), 6)
+            )
             if sell_qty >= MIN_POSITION_CRYPTO:
                 try:
                     res = _place_pionex_order("SELL", size_crypto=sell_qty, price=price)
@@ -691,6 +701,7 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
         if has_position and entry_price and entry_size
         else 0.0
     )
+    pnl_pct_text = f"{profit_pct:+.2f}%" if has_position and entry_price else "0.00%"
 
     runtime_state["has_position"] = has_position
     runtime_state["entry_price"] = entry_price
@@ -739,6 +750,7 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
         "stop_loss_pct": STOP_LOSS_PCT,
         "profit_pct": profit_pct,
         "profit_usdt": profit_usdt,
+        "pnl_pct_text": pnl_pct_text,
         "status": status,
         "status_detail": status_detail,
         "recent_trades": recent_trades,
