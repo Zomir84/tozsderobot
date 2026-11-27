@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import json
 import math
 import os
@@ -10,9 +12,14 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 
 SYMBOL = os.getenv("SYMBOL", "SOLUSDT")
+PIONEX_SYMBOL = os.getenv("PIONEX_SYMBOL", "SOL_USDT")
 BASE_COIN = os.getenv("BASE_COIN", "SOL")
 QUOTE_COIN = os.getenv("QUOTE_COIN", "USDT")
 YAHOO_SYMBOL = os.getenv("YAHOO_SYMBOL", "SOL-USD")
+
+PIONEX_BASE_URL = os.getenv("PIONEX_BASE_URL", "https://api.pionex.com").rstrip("/")
+PIONEX_API_KEY = os.getenv("PIONEX_API_KEY", "").strip()
+PIONEX_API_SECRET = os.getenv("PIONEX_API_SECRET", "").strip()
 
 CYCLE_SECONDS = int(os.getenv("CYCLE_SECONDS", "45"))
 GIT_SYNC_SECONDS = int(os.getenv("GIT_SYNC_SECONDS", "120"))
@@ -203,10 +210,74 @@ def fetch_indicators_safe(runtime_state, previous_status, now_ts):
         return fb
 
 
-def fetch_pionex_snapshot(runtime_state, previous_status):
+def _fetch_pionex_public_price(symbol_pair=PIONEX_SYMBOL):
+    url = f"{PIONEX_BASE_URL}/api/v1/market/tickers?symbol={symbol_pair}"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    tickers = ((payload.get("data") or {}).get("tickers")) or []
+    for item in tickers:
+        if item.get("symbol") == symbol_pair and item.get("close") is not None:
+            return round(float(item["close"]), 4)
+    return None
+
+
+def _fetch_pionex_balances():
+    if not PIONEX_API_KEY or not PIONEX_API_SECRET:
+        return None
+    path = "/api/v1/account/balances"
+    ts_ms = str(int(time.time() * 1000))
+    query = f"timestamp={ts_ms}"
+    sign_msg = f"GET{path}?{query}"
+    signature = hmac.new(
+        PIONEX_API_SECRET.encode("utf-8"),
+        sign_msg.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    url = f"{PIONEX_BASE_URL}{path}?{query}"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "PIONEX-KEY": PIONEX_API_KEY,
+            "PIONEX-SIGNATURE": signature,
+            "User-Agent": "Mozilla/5.0",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    balances = ((payload.get("data") or {}).get("balances")) or []
+    free_map = {}
+    for row in balances:
+        coin = str(row.get("coin") or "").upper()
+        if coin:
+            free_map[coin] = float(row.get("free") or 0.0)
+    return free_map
+
+
+def fetch_pionex_snapshot(runtime_state, previous_status, now_ts):
     price = float(previous_status.get("price") or runtime_state.get("last_price") or 0.0)
     free_usdt = float(previous_status.get("free_usdt") or runtime_state.get("free_usdt") or 0.0)
     free_crypto = float(previous_status.get("free_crypto") or runtime_state.get("free_crypto") or 0.0)
+
+    try:
+        live_price = _fetch_pionex_public_price()
+        if live_price and live_price > 0:
+            price = live_price
+    except Exception as exc:
+        print(f"[PIONEX] Árfolyam lekérési figyelmeztetés: {exc}")
+        send_throttled_telegram(runtime_state, "pionex_price_err", f"Pionex ár hiba: {exc}", now_ts)
+
+    try:
+        bal_map = _fetch_pionex_balances()
+        if bal_map is not None:
+            if QUOTE_COIN.upper() in bal_map:
+                free_usdt = round(bal_map[QUOTE_COIN.upper()], 4)
+            if BASE_COIN.upper() in bal_map:
+                free_crypto = round(bal_map[BASE_COIN.upper()], 6)
+    except Exception as exc:
+        print(f"[PIONEX] Egyenleg lekérési figyelmeztetés: {exc}")
+        send_throttled_telegram(runtime_state, "pionex_bal_err", f"Pionex egyenleg hiba: {exc}", now_ts)
+
     recent_trades = (
         previous_status.get("recent_trades")
         if isinstance(previous_status.get("recent_trades"), list)
@@ -279,7 +350,7 @@ def sync_git_safe(runtime_state, now_ts):
             timeout=30,
         )
         runtime_state["last_git_sync_ts"] = now_ts
-        print(f"[GIT] Szinkronizálva az origin/main ággal.")
+        print("[GIT] Szinkronizálva az origin/main ággal.")
         return True
     except Exception as exc:
         print(f"[GIT] Szinkron figyelmeztetés: {exc}")
@@ -288,7 +359,7 @@ def sync_git_safe(runtime_state, now_ts):
 
 
 def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
-    pionex = fetch_pionex_snapshot(runtime_state, previous_status)
+    pionex = fetch_pionex_snapshot(runtime_state, previous_status, now_ts)
     indicators = fetch_indicators_safe(runtime_state, previous_status, now_ts)
     runtime_state["last_indicators"] = indicators
 
@@ -301,6 +372,8 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
     has_position = bool(runtime_state.get("has_position", free_crypto > 0.01))
     runtime_state["has_position"] = has_position
     runtime_state["last_price"] = price
+    runtime_state["free_usdt"] = free_usdt
+    runtime_state["free_crypto"] = free_crypto
 
     entry_price = runtime_state.get("entry_price") if has_position else None
     entry_size = runtime_state.get("entry_size") if has_position else None
