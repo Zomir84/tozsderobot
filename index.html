@@ -248,7 +248,7 @@
       </div>
     </section>
 
-    <!-- 2. DIAGRAMOK: KEZDŐTŐKE ÉS NYERESÉG / VESZTESÉG ALAKULÁSA -->
+    <!-- 2. DIAGRAMOK: KEZDŐTŐKE, NYERESÉG / VESZTESÉG ÉS ZSEBBE TEHETŐ NYERESÉG -->
     <section id="view-charts" class="view">
       <div class="card">
         <div class="chart-head">
@@ -419,6 +419,8 @@
       const netPct = startCapital > 0 ? (netDiff / startCapital) * 100 : 0;
       const peakTotal = curve.length ? Math.max(...curve) : finalTotal;
       const troughTotal = curve.length ? Math.min(...curve) : finalTotal;
+      const pocketProfit = netDiff > 0 ? netDiff : 0;
+      const remainingAfterPocket = Math.max(0, finalTotal - pocketProfit);
 
       return {
         startCapital,
@@ -427,6 +429,8 @@
         netPct,
         peakTotal,
         troughTotal,
+        pocketProfit,
+        remainingAfterPocket,
         curve,
       };
     }
@@ -455,12 +459,14 @@
             <b style="color:#f8fafc;">$${info.finalTotal.toFixed(2)}</b>
           </div>
           <div class="lvl-chip">
-            <span class="muted">Nettó nyereség / veszteség</span>
-            <b style="color:${info.netDiff >= 0 ? "#22c55e" : "#ef4444"};">${formatSignedUsd(info.netDiff)} (${info.netPct >= 0 ? "+" : ""}${info.netPct.toFixed(2)}%)</b>
+            <span class="muted">Zsebbe tehető nyereség (saját számlára)</span>
+            <b style="color:${info.pocketProfit > 0 ? "#22c55e" : "#94a3b8"};">+$${info.pocketProfit.toFixed(2)}</b>
+            <span class="muted" style="font-size:0.72rem;">Maradék kivétel után: $${info.remainingAfterPocket.toFixed(2)}</span>
           </div>
           <div class="lvl-chip">
-            <span class="muted">Tőkecsúcs / mélypont</span>
-            <b>$${info.peakTotal.toFixed(2)} / $${info.troughTotal.toFixed(2)}</b>
+            <span class="muted">Nettó nyereség / veszteség</span>
+            <b style="color:${info.netDiff >= 0 ? "#22c55e" : "#ef4444"};">${formatSignedUsd(info.netDiff)} (${info.netPct >= 0 ? "+" : ""}${info.netPct.toFixed(2)}%)</b>
+            <span class="muted" style="font-size:0.72rem;">Csúcs / mélypont: $${info.peakTotal.toFixed(2)} / $${info.troughTotal.toFixed(2)}</span>
           </div>
         `;
       }
@@ -741,7 +747,6 @@
         ctx.fillText(`$${val.toFixed(2)}`, padL + plotW + 6, y);
       }
 
-      // Kezdőtőke referencia-vonal
       const yBase = toY(base);
       ctx.save();
       ctx.setLineDash([5, 4]);
@@ -756,7 +761,6 @@
       ctx.fillText(`Kezdőtőke $${base.toFixed(2)}`, padL + 4, Math.max(padT + 8, yBase - 8));
       ctx.restore();
 
-      // Szakaszok zölddel (kezdőtőke felett) vagy pirossal (alatta)
       for (let i = 0; i < pts.length - 1; i++) {
         const x1 = padL + (i / (pts.length - 1)) * plotW;
         const y1 = toY(pts[i]);
