@@ -1296,29 +1296,38 @@
     function extractTradeUsdt(trade) {
       const size = Number(trade?.size);
       const price = Number(trade?.price);
-      if (Number.isFinite(Number(trade?.usdt))) return Number(trade.usdt);
-      if (Number.isFinite(Number(trade?.cost_usdt))) return Number(trade.cost_usdt);
-      if (Number.isFinite(size) && Number.isFinite(price)) return size * price;
+      if (Number.isFinite(Number(trade?.usdt)) && Number(trade.usdt) > 0) return Number(trade.usdt);
+      if (Number.isFinite(Number(trade?.cost_usdt)) && Number(trade.cost_usdt) > 0) return Number(trade.cost_usdt);
+      if (Number.isFinite(size) && size > 0 && Number.isFinite(price) && price > 0) return size * price;
       return 0;
     }
 
-    function formatTradePnl(trade, pairedBuyCost) {
+    function formatTradePnl(trade, pairedBuy) {
       const side = String(trade?.side || '').toUpperCase();
       if (side !== 'SELL') {
         const px = Number(trade?.price);
         return Number.isFinite(px) && px > 0 ? ` • @ $${px.toFixed(2)}` : '';
       }
 
-      const size = Number(trade?.size);
-      const price = Number(trade?.price);
+      const sellSize = Number(trade?.size);
+      const sellPrice = Number(trade?.price);
       const sellUsdt = extractTradeUsdt(trade);
 
       let pnl = Number(trade?.pnl_usdt);
-      if (!Number.isFinite(pnl)) {
-        if (sellUsdt > 0 && Number.isFinite(pairedBuyCost) && pairedBuyCost > 0) {
-          pnl = sellUsdt - pairedBuyCost;
-        } else if (Number.isFinite(Number(trade?.entry_price)) && Number(trade.entry_price) > 0 && Number.isFinite(size) && Number.isFinite(price)) {
-          pnl = (price - Number(trade.entry_price)) * size;
+      let baseCost = 0;
+
+      if (Number.isFinite(pnl)) {
+        baseCost = sellUsdt > 0 ? sellUsdt - pnl : 0;
+      } else if (pairedBuy && pairedBuy.usdt > 0 && sellUsdt > 0) {
+        if (pairedBuy.size > 0 && sellSize > 0) {
+          const sizeRatio = sellSize / pairedBuy.size;
+          if (sizeRatio >= 0.85 && sizeRatio <= 1.15) {
+            baseCost = pairedBuy.usdt * sizeRatio;
+            pnl = sellUsdt - baseCost;
+          }
+        } else {
+          baseCost = pairedBuy.usdt;
+          pnl = sellUsdt - baseCost;
         }
       }
 
@@ -1326,9 +1335,6 @@
         return '';
       }
 
-      const baseCost = Number.isFinite(pairedBuyCost) && pairedBuyCost > 0
-        ? pairedBuyCost
-        : (sellUsdt > 0 ? sellUsdt - pnl : 0);
       const pct = baseCost > 0 ? (pnl / baseCost) * 100 : null;
       const sign = pnl > 0 ? '+' : (pnl < 0 ? '-' : '');
       const absUsd = Math.abs(pnl).toFixed(2);
@@ -1347,14 +1353,18 @@
         return;
       }
 
-      const pairedBuyCosts = new Array(trades.length).fill(null);
+      const pairedBuys = new Array(trades.length).fill(null);
       for (let i = 0; i < trades.length; i++) {
         if (String(trades[i]?.side || '').toUpperCase() === 'SELL') {
           for (let j = i + 1; j < trades.length; j++) {
             if (String(trades[j]?.side || '').toUpperCase() === 'BUY') {
               const bUsdt = extractTradeUsdt(trades[j]);
+              const bSize = Number(trades[j]?.size);
               if (Number.isFinite(bUsdt) && bUsdt > 0) {
-                pairedBuyCosts[i] = bUsdt;
+                pairedBuys[i] = {
+                  usdt: bUsdt,
+                  size: Number.isFinite(bSize) && bSize > 0 ? bSize : 0
+                };
               }
               break;
             }
@@ -1372,7 +1382,7 @@
         const safeUsdt = Number.isFinite(rawUsdt) ? rawUsdt.toFixed(2) : '0.00';
         const safeSize = Number.isFinite(size) ? size.toFixed(4) : '0.0000';
         const safePrice = Number.isFinite(price) ? price.toFixed(2) : '0.00';
-        const pnlSuffix = formatTradePnl(t, pairedBuyCosts[idx]);
+        const pnlSuffix = formatTradePnl(t, pairedBuys[idx]);
 
         return `
           <div class="trade-item">
