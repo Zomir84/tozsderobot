@@ -1,0 +1,6 @@
+1/
+__pycache__/
+patch_ind.py
+robot_inditas.bat
+robot_runtime_state.json
+.env
