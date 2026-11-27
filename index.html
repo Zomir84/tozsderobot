@@ -13,7 +13,7 @@
       padding: 14px;
       padding-bottom: 84px;
     }
-    .wrap { max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+    .wrap { max-width: 540px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
     .card {
       background: #121827;
       border: 1px solid rgba(148, 163, 184, 0.12);
@@ -63,13 +63,37 @@
     .chart-right { font-size: 0.95rem; font-weight: 700; color: #22c55e; }
     canvas {
       width: 100%;
-      height: 190px;
-      background: #0d121e;
+      height: 230px;
+      background: #0b101b;
       border-radius: 14px;
-      border: 1px solid rgba(148, 163, 184, 0.1);
+      border: 1px solid rgba(148, 163, 184, 0.12);
       margin-top: 10px;
       display: block;
     }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 14px;
+      margin-top: 10px;
+      font-size: 0.78rem;
+      color: #cbd5e1;
+    }
+    .leg-item { display: inline-flex; align-items: center; gap: 6px; }
+    .leg-dot { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
+    .levels-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .lvl-chip {
+      background: #0d121e;
+      border: 1px solid rgba(148, 163, 184, 0.1);
+      border-radius: 12px;
+      padding: 9px 11px;
+      font-size: 0.8rem;
+    }
+    .lvl-chip b { display: block; font-size: 0.92rem; margin-top: 2px; }
     .view { display: none; flex-direction: column; gap: 12px; }
     .view.active { display: flex; }
     .trade-item {
@@ -134,7 +158,7 @@
 </head>
 <body>
   <div class="wrap">
-    <!-- 1. ÁTTEKINTÉS (a képernyőkép szerinti teljes elrendezés + pillanatnyi % PnL) -->
+    <!-- 1. ÁTTEKINTÉS -->
     <section id="view-overview" class="view active">
       <div class="card">
         <div id="total-usd" class="big-val">$0.00</div>
@@ -182,10 +206,17 @@
 
       <div class="card">
         <div class="chart-head">
-          <div class="chart-title">SOL árfolyam-alakulás</div>
+          <div class="chart-title">SOL árfolyam és kilépési szintek</div>
           <div id="overview-chart-price" class="chart-right">$0.00 (+0.00%)</div>
         </div>
-        <canvas id="overviewChart" width="480" height="190"></canvas>
+        <canvas id="overviewChart"></canvas>
+        <div class="legend">
+          <span class="leg-item"><i class="leg-dot" style="background:#22c55e;"></i>Árfolyam</span>
+          <span class="leg-item"><i class="leg-dot" style="background:#60a5fa;"></i>Bekerülés</span>
+          <span class="leg-item"><i class="leg-dot" style="background:#fbbf24;"></i>Trailing start (+1.5%)</span>
+          <span class="leg-item"><i class="leg-dot" style="background:#f97316;"></i>Trailing stop (-0.8%)</span>
+          <span class="leg-item"><i class="leg-dot" style="background:#ef4444;"></i>Stop-Loss (-5.0%)</span>
+        </div>
         <div id="overview-minmax" class="muted" style="margin-top: 10px;">Min: — • Max: —</div>
         <div id="indicators-line" class="muted" style="margin-top: 4px;">
           MA10: — • MA30: — • RSI: — • ADX: —
@@ -198,12 +229,20 @@
       <div class="card">
         <div class="chart-head">
           <div>
-            <div class="muted">Részletes árfolyam-alakulás</div>
+            <div class="muted">Eladási / kilépési lépcsők és árfolyam</div>
             <div id="chart-latest-price" class="med-val">$0.00</div>
           </div>
           <div id="chart-minmax" class="muted">Min: — • Max: —</div>
         </div>
-        <canvas id="priceChart" width="480" height="220"></canvas>
+        <canvas id="priceChart"></canvas>
+        <div class="legend">
+          <span class="leg-item"><i class="leg-dot" style="background:#22c55e;"></i>Árfolyam</span>
+          <span class="leg-item"><i class="leg-dot" style="background:#60a5fa;"></i>Bekerülés</span>
+          <span class="leg-item"><i class="leg-dot" style="background:#fbbf24;"></i>Trailing aktiválás</span>
+          <span class="leg-item"><i class="leg-dot" style="background:#f97316;"></i>Trailing stop</span>
+          <span class="leg-item"><i class="leg-dot" style="background:#ef4444;"></i>Stop-Loss</span>
+        </div>
+        <div id="exit-levels-box" class="levels-grid"></div>
         <div id="chart-ma-info" class="muted" style="margin-top: 10px;">
           MA10: — • MA30: — • RSI: — • ADX: —
         </div>
@@ -267,6 +306,68 @@
       return `${n >= 0 ? "+" : "-"}$${Math.abs(n).toFixed(2)}`;
     }
 
+    function computeExitLevels(s) {
+      if (!s || !s.has_position || !Number(s.entry_price)) {
+        return null;
+      }
+      const entry = Number(s.entry_price);
+      const price = Number(s.price || entry);
+      const high = Math.max(Number(s.highest_price || entry), price);
+      const slPct = Number(s.stop_loss_pct || 5.0);
+      const trailStartPct = 1.5;
+      const trailCbPct = 0.8;
+
+      const stopLoss = s.stop_loss_price != null ? Number(s.stop_loss_price) : entry * (1 - slPct / 100);
+      const trailStart = entry * (1 + trailStartPct / 100);
+      const trailingActive = Boolean(s.trailing_active) || price >= trailStart || high >= trailStart;
+      const trailingStop = high * (1 - trailCbPct / 100);
+
+      return {
+        entry,
+        high,
+        stopLoss,
+        trailStart,
+        trailingActive,
+        trailingStop,
+        slPct,
+        trailStartPct,
+        trailCbPct,
+      };
+    }
+
+    function renderExitLevelsBox(s) {
+      const box = document.getElementById("exit-levels-box");
+      if (!box) return;
+      const lv = computeExitLevels(s);
+      if (!lv) {
+        box.innerHTML = `<div class="lvl-chip" style="grid-column:1 / -1;"><span class="muted">Nincs nyitott pozíció — aktív eladási lépcső: —</span></div>`;
+        return;
+      }
+      const trailStatusTxt = lv.trailingActive
+        ? `Aktív (csúcs: $${lv.high.toFixed(2)})`
+        : `Várakozik ($${lv.trailStart.toFixed(2)}-nél indul)`;
+
+      box.innerHTML = `
+        <div class="lvl-chip">
+          <span class="muted">Bekerülési ár</span>
+          <b style="color:#60a5fa;">$${lv.entry.toFixed(2)}</b>
+        </div>
+        <div class="lvl-chip">
+          <span class="muted">Trailing start (+${lv.trailStartPct.toFixed(1)}%)</span>
+          <b style="color:#fbbf24;">$${lv.trailStart.toFixed(2)}</b>
+        </div>
+        <div class="lvl-chip">
+          <span class="muted">Trailing stop (-${lv.trailCbPct.toFixed(1)}% csúcstól)</span>
+          <b style="color:#f97316;">$${lv.trailingStop.toFixed(2)}</b>
+          <span class="muted" style="font-size:0.72rem;">${trailStatusTxt}</span>
+        </div>
+        <div class="lvl-chip">
+          <span class="muted">Stop-Loss (-${lv.slPct.toFixed(1)}%)</span>
+          <b style="color:#ef4444;">$${lv.stopLoss.toFixed(2)}</b>
+        </div>
+      `;
+    }
+
     function renderLivePnlPct(status) {
       const el = document.getElementById("live-pnl-pct");
       if (!el) return;
@@ -295,7 +396,6 @@
       const todayStr = now.toISOString().slice(0, 10);
       document.getElementById("realized-date").textContent = `Nap: ${todayStr}`;
 
-      // Ha a status JSON tartalmaz előre kiszámolt realizált PnL mezőket, azokat használja; egyébként history-ból számol
       let daily = status && status.realized_daily != null ? Number(status.realized_daily) : null;
       let weekly = status && status.realized_weekly != null ? Number(status.realized_weekly) : null;
       let monthly = status && status.realized_monthly != null ? Number(status.realized_monthly) : null;
@@ -376,17 +476,26 @@
 
       renderLivePnlPct(s);
       renderRealizedPnl(s, latestHistory);
+      renderExitLevelsBox(s);
       syncSimulatorDefaults(s);
       drawCharts();
     }
 
-    function drawSingleCanvas(canvasId, minMaxId) {
+    function drawSingleCanvas(canvasId, minMaxId, showDetailedLabels) {
       const canvas = document.getElementById(canvasId);
       if (!canvas) return;
+
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const cssW = canvas.clientWidth || 480;
+      const cssH = canvas.clientHeight || 220;
+      if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
+        canvas.width = Math.round(cssW * dpr);
+        canvas.height = Math.round(cssH * dpr);
+      }
+
       const ctx = canvas.getContext("2d");
-      const w = canvas.width;
-      const h = canvas.height;
-      ctx.clearRect(0, 0, w, h);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cssW, cssH);
 
       const points = [];
       for (const row of latestHistory) {
@@ -399,52 +508,106 @@
 
       if (points.length < 2) {
         ctx.fillStyle = "#94a3b8";
-        ctx.font = "13px sans-serif";
-        ctx.fillText("Nincs elég előzményadat a grafikonhoz.", 16, h / 2);
+        ctx.font = "12px -apple-system, sans-serif";
+        ctx.fillText("Nincs elég előzményadat a grafikonhoz.", 14, cssH / 2);
         return;
       }
 
-      const minP = Math.min(...points);
-      const maxP = Math.max(...points);
+      const lv = computeExitLevels(latestStatus);
+      const scaleValues = [...points];
+      if (lv) {
+        scaleValues.push(lv.entry, lv.trailStart, lv.trailingStop, lv.stopLoss);
+      }
+
+      const rawMin = Math.min(...scaleValues);
+      const rawMax = Math.max(...scaleValues);
+      const padVal = Math.max((rawMax - rawMin) * 0.12, 0.25);
+      const minP = rawMin - padVal;
+      const maxP = rawMax + padVal;
       const span = Math.max(maxP - minP, 0.01);
 
       const mmEl = document.getElementById(minMaxId);
-      if (mmEl) mmEl.textContent = `Min: $${minP.toFixed(2)} • Max: $${maxP.toFixed(2)}`;
+      if (mmEl) mmEl.textContent = `Min: $${Math.min(...points).toFixed(2)} • Max: $${Math.max(...points).toFixed(2)}`;
 
-      const padL = 12, padR = 12, padT = 16, padB = 18;
-      const plotW = w - padL - padR;
-      const plotH = h - padT - padB;
+      const padL = 10, padR = 62, padT = 14, padB = 16;
+      const plotW = Math.max(cssW - padL - padR, 40);
+      const plotH = Math.max(cssH - padT - padB, 40);
 
+      const toY = (val) => padT + (1 - (val - minP) / span) * plotH;
+
+      // Finom vízszintes rács + jobb oldali ártengely
+      ctx.font = "10px -apple-system, sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      const gridSteps = 4;
+      for (let i = 0; i <= gridSteps; i++) {
+        const ratio = i / gridSteps;
+        const y = padT + ratio * plotH;
+        const val = maxP - ratio * span;
+        ctx.strokeStyle = "rgba(148, 163, 184, 0.09)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(padL, y);
+        ctx.lineTo(padL + plotW, y);
+        ctx.stroke();
+
+        ctx.fillStyle = "#64748b";
+        ctx.fillText(`$${val.toFixed(2)}`, padL + plotW + 6, y);
+      }
+
+      function drawLevelLine(val, color, label) {
+        if (val == null || Number.isNaN(val) || val < minP || val > maxP) return;
+        const y = toY(val);
+        ctx.save();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.25;
+        ctx.beginPath();
+        ctx.moveTo(padL, y);
+        ctx.lineTo(padL + plotW, y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        if (showDetailedLabels && label) {
+          ctx.font = "600 10px -apple-system, sans-serif";
+          ctx.fillStyle = color;
+          ctx.textAlign = "left";
+          ctx.fillText(`${label} $${val.toFixed(2)}`, padL + 4, Math.max(padT + 8, y - 7));
+        }
+        ctx.restore();
+      }
+
+      if (lv) {
+        drawLevelLine(lv.trailStart, "#fbbf24", "Trail +1.5%");
+        drawLevelLine(lv.entry, "#60a5fa", "Belépés");
+        drawLevelLine(lv.trailingStop, "#f97316", "Trail stop");
+        drawLevelLine(lv.stopLoss, "#ef4444", "Stop-Loss");
+      }
+
+      // Árfolyamvonal
       ctx.beginPath();
       points.forEach((px, idx) => {
         const x = padL + (idx / (points.length - 1)) * plotW;
-        const y = padT + (1 - (px - minP) / span) * plotH;
+        const y = toY(px);
         if (idx === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       });
       ctx.strokeStyle = "#22c55e";
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = 2.2;
       ctx.stroke();
 
-      if (latestStatus && Number(latestStatus.entry_price) > 0) {
-        const ep = Number(latestStatus.entry_price);
-        if (ep >= minP && ep <= maxP) {
-          const yEp = padT + (1 - (ep - minP) / span) * plotH;
-          ctx.setLineDash([5, 5]);
-          ctx.beginPath();
-          ctx.moveTo(padL, yEp);
-          ctx.lineTo(w - padR, yEp);
-          ctx.strokeStyle = "#60a5fa";
-          ctx.lineWidth = 1.2;
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
-      }
+      // Utolsó pont jelölése
+      const lastX = padL + plotW;
+      const lastY = toY(points[points.length - 1]);
+      ctx.fillStyle = "#22c55e";
+      ctx.beginPath();
+      ctx.arc(lastX, lastY, 3.5, 0, Math.PI * 2);
+      ctx.fill();
     }
 
     function drawCharts() {
-      drawSingleCanvas("overviewChart", "overview-minmax");
-      drawSingleCanvas("priceChart", "chart-minmax");
+      drawSingleCanvas("overviewChart", "overview-minmax", false);
+      drawSingleCanvas("priceChart", "chart-minmax", true);
     }
 
     function renderTrades(history) {
@@ -516,6 +679,8 @@
         });
       }
     });
+
+    window.addEventListener("resize", drawCharts);
 
     async function loadAll() {
       try {
