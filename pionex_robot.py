@@ -25,6 +25,8 @@ PIONEX_API_SECRET = os.getenv("PIONEX_API_SECRET", "").strip()
 LIVE_TRADING_ENABLED = os.getenv("LIVE_TRADING_ENABLED", "0").strip() in ("1", "true", "yes", "on")
 ORDER_AMOUNT_USDT = float(os.getenv("ORDER_AMOUNT_USDT", "15.0"))
 MIN_ORDER_USDT = float(os.getenv("MIN_ORDER_USDT", "5.0"))
+MIN_POSITION_CRYPTO = float(os.getenv("MIN_POSITION_CRYPTO", "0.01"))
+DEFAULT_ADOPT_ENTRY_PRICE = float(os.getenv("DEFAULT_ADOPT_ENTRY_PRICE", "70.03"))
 
 CYCLE_SECONDS = int(os.getenv("CYCLE_SECONDS", "45"))
 GIT_SYNC_SECONDS = int(os.getenv("GIT_SYNC_SECONDS", "120"))
@@ -495,15 +497,45 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
     free_crypto = float(pionex["free_crypto"])
     recent_trades = list(pionex.get("recent_trades") or [])
 
-    has_position = bool(runtime_state.get("has_position", free_crypto > 0.01))
-    entry_price = runtime_state.get("entry_price") if has_position else None
-    entry_size = runtime_state.get("entry_size") if has_position else None
-    entry_cost_usdt = (
-        round(float(runtime_state.get("entry_cost_usdt") or 0.0), 2) if has_position else 0.0
-    )
-    highest_price = runtime_state.get("highest_price") if has_position else None
-    trailing_active = bool(runtime_state.get("trailing_active", False)) if has_position else False
-    stop_loss_price = runtime_state.get("stop_loss_price") if has_position else None
+    has_position = bool(runtime_state.get("has_position", False))
+    entry_price = runtime_state.get("entry_price")
+    entry_size = runtime_state.get("entry_size")
+    entry_cost_usdt = round(float(runtime_state.get("entry_cost_usdt") or 0.0), 2)
+    highest_price = runtime_state.get("highest_price")
+    trailing_active = bool(runtime_state.get("trailing_active", False))
+    stop_loss_price = runtime_state.get("stop_loss_price")
+
+    # Meglévő egyenleg automatikus átvétele nyitott pozícióként, ha van SOL a tárcában
+    if not has_position and free_crypto >= MIN_POSITION_CRYPTO and price > 0:
+        adopted_entry = round(float(entry_price or DEFAULT_ADOPT_ENTRY_PRICE), 4)
+        adopted_size = round(float(entry_size or free_crypto), 6)
+        has_position = True
+        entry_price = adopted_entry
+        entry_size = adopted_size
+        entry_cost_usdt = round(adopted_size * adopted_entry, 2)
+        highest_price = round(max(price, adopted_entry), 4)
+        trailing_active = False
+        stop_loss_price = round(adopted_entry * (1.0 - STOP_LOSS_PCT / 100.0), 4)
+        runtime_state["entry_time"] = runtime_state.get("entry_time") or now_dt.isoformat()
+        print(f"[POS] Meglévő {BASE_COIN} átvéve: {adopted_size} @ ${adopted_entry}")
+    elif has_position and free_crypto < MIN_POSITION_CRYPTO:
+        has_position = False
+        entry_price = None
+        entry_size = None
+        entry_cost_usdt = 0.0
+        highest_price = None
+        trailing_active = False
+        stop_loss_price = None
+        runtime_state["entry_time"] = None
+    elif has_position and not entry_price and price > 0:
+        adopted_entry = round(DEFAULT_ADOPT_ENTRY_PRICE, 4)
+        adopted_size = round(float(entry_size or free_crypto), 6)
+        entry_price = adopted_entry
+        entry_size = adopted_size
+        entry_cost_usdt = round(adopted_size * adopted_entry, 2)
+        highest_price = round(max(price, adopted_entry), 4)
+        stop_loss_price = round(adopted_entry * (1.0 - STOP_LOSS_PCT / 100.0), 4)
+        runtime_state["entry_time"] = runtime_state.get("entry_time") or now_dt.isoformat()
 
     ma10 = indicators.get("ma10")
     ma30 = indicators.get("ma30")
@@ -541,6 +573,7 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
                     highest_price = round(max(price, fill_px), 4)
                     trailing_active = False
                     stop_loss_price = round(entry_price * (1.0 - STOP_LOSS_PCT / 100.0), 4)
+                    runtime_state["entry_time"] = now_dt.isoformat()
                     if not LIVE_TRADING_ENABLED:
                         free_crypto = round(free_crypto + fill_qty, 6)
                         free_usdt = round(max(0.0, free_usdt - fill_usdt), 4)
@@ -610,6 +643,7 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
                     highest_price = None
                     trailing_active = False
                     stop_loss_price = None
+                    runtime_state["entry_time"] = None
                     runtime_state["last_sell_ts"] = now_ts
 
                     trade_rec = {
