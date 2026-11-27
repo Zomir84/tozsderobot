@@ -32,6 +32,7 @@ CYCLE_SECONDS = int(os.getenv("CYCLE_SECONDS", "45"))
 GIT_SYNC_SECONDS = int(os.getenv("GIT_SYNC_SECONDS", "120"))
 ALERT_COOLDOWN_SECONDS = int(os.getenv("ALERT_COOLDOWN_SECONDS", "600"))
 BUY_COOLDOWN_SECONDS = int(os.getenv("BUY_COOLDOWN_SECONDS", "900"))
+SELL_COOLDOWN_SECONDS = int(os.getenv("SELL_COOLDOWN_SECONDS", "900"))
 
 ADX_MIN = float(os.getenv("ADX_MIN", "20"))
 RSI_MAX = float(os.getenv("RSI_MAX", "70"))
@@ -287,7 +288,7 @@ def _fetch_pionex_balances():
     return free_map
 
 
-def _collect_order_fills(order_id):
+def _collect_order_fills(order_id, expected_size=None, ref_price=None):
     if not order_id or not PIONEX_API_KEY or not PIONEX_API_SECRET:
         return None
     try:
@@ -303,20 +304,29 @@ def _collect_order_fills(order_id):
         total_qty = 0.0
         total_quote = 0.0
         for f in fills:
-            qty = float(f.get("size") or f.get("qty") or 0.0)
-            px = float(f.get("price") or 0.0)
-            quote_amt = float(f.get("quoteAmount") or f.get("amount") or (qty * px))
+            raw_qty = float(f.get("size") or f.get("qty") or 0.0)
+            px = float(f.get("price") or ref_price or 0.0)
+            raw_quote = float(f.get("quoteAmount") or f.get("amount") or 0.0)
+
+            # Ha a size értéke hibásan quoteAmount nagyságrendű, korrigáljuk
+            if expected_size and expected_size > 0 and raw_qty > expected_size * 10 and px > 0:
+                qty = raw_qty / px
+                quote_amt = raw_qty
+            else:
+                qty = raw_qty
+                quote_amt = raw_quote if raw_quote > 0 else (qty * px)
+
             if qty > 0:
                 total_qty += qty
                 total_quote += quote_amt if quote_amt > 0 else (qty * px)
 
         if total_qty <= 0:
             return None
-        avg_price = total_quote / total_qty
+        avg_price = (total_quote / total_qty) if total_quote > 0 else float(ref_price or 0.0)
         return {
             "order_id": str(order_id),
             "filled_qty": round(total_qty, 6),
-            "filled_usdt": round(total_quote, 4),
+            "filled_usdt": round(total_quote, 2),
             "avg_price": round(avg_price, 4),
             "fill_count": len(fills),
         }
@@ -346,9 +356,9 @@ def _place_pionex_order(side, amount_usdt=None, size_crypto=None, price=None):
             else round(float(size_crypto or 0.0), 6)
         )
         est_usdt = (
-            round(float(amount_usdt or 0.0), 4)
+            round(float(amount_usdt or 0.0), 2)
             if side.upper() == "BUY"
-            else round(est_size * est_price, 4)
+            else round(est_size * est_price, 2)
         )
         return {
             "simulated": True,
@@ -364,21 +374,21 @@ def _place_pionex_order(side, amount_usdt=None, size_crypto=None, price=None):
     order_id = str(data.get("orderId") or data.get("order_id") or client_order_id)
 
     time.sleep(0.6)
-    merged = _collect_order_fills(order_id)
+    merged = _collect_order_fills(order_id, expected_size=size_crypto, ref_price=price)
     if merged:
         return {"simulated": False, **merged}
 
-    fallback_px = float(data.get("price") or price or 0.0)
-    fallback_qty = float(data.get("filledSize") or data.get("size") or size_crypto or 0.0)
-    if side.upper() == "BUY" and fallback_qty <= 0 and amount_usdt and fallback_px > 0:
+    fallback_px = float(price or data.get("price") or 0.0)
+    fallback_qty = float(size_crypto or 0.0)
+    if side.upper() == "BUY" and amount_usdt and fallback_px > 0:
         fallback_qty = round(float(amount_usdt) / fallback_px, 6)
-    fallback_usdt = float(data.get("filledAmount") or amount_usdt or (fallback_qty * fallback_px))
+    fallback_usdt = round(fallback_qty * fallback_px, 2)
     return {
         "simulated": False,
         "order_id": order_id,
         "avg_price": round(fallback_px, 4),
         "filled_qty": round(fallback_qty, 6),
-        "filled_usdt": round(fallback_usdt, 4),
+        "filled_usdt": fallback_usdt,
         "fill_count": 1,
     }
 
@@ -505,10 +515,20 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
     trailing_active = bool(runtime_state.get("trailing_active", False))
     stop_loss_price = runtime_state.get("stop_loss_price")
 
-    # Meglévő egyenleg automatikus átvétele nyitott pozícióként, ha van SOL a tárcában
-    if not has_position and free_crypto >= MIN_POSITION_CRYPTO and price > 0:
+    last_sell_ts = float(runtime_state.get("last_sell_ts") or 0.0)
+    last_sold_crypto = float(runtime_state.get("last_sold_crypto") or 0.0)
+    sell_cooldown_ok = (now_ts - last_sell_ts) >= SELL_COOLDOWN_SECONDS
+
+    # Megakadályozzuk, hogy eladás után azonnal ugyanazt a maradék egyenleget újra átvegye és eladja
+    unchanged_after_sell = (
+        last_sold_crypto > 0
+        and abs(free_crypto - last_sold_crypto) <= 0.001
+        and not sell_cooldown_ok
+    )
+
+    if not has_position and free_crypto >= MIN_POSITION_CRYPTO and price > 0 and not unchanged_after_sell:
         adopted_entry = round(float(entry_price or DEFAULT_ADOPT_ENTRY_PRICE), 4)
-        adopted_size = round(float(entry_size or free_crypto), 6)
+        adopted_size = round(float(free_crypto), 6)
         has_position = True
         entry_price = adopted_entry
         entry_size = adopted_size
@@ -527,29 +547,20 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
         trailing_active = False
         stop_loss_price = None
         runtime_state["entry_time"] = None
-    elif has_position and not entry_price and price > 0:
-        adopted_entry = round(DEFAULT_ADOPT_ENTRY_PRICE, 4)
-        adopted_size = round(float(entry_size or free_crypto), 6)
-        entry_price = adopted_entry
-        entry_size = adopted_size
-        entry_cost_usdt = round(adopted_size * adopted_entry, 2)
-        highest_price = round(max(price, adopted_entry), 4)
-        stop_loss_price = round(adopted_entry * (1.0 - STOP_LOSS_PCT / 100.0), 4)
-        runtime_state["entry_time"] = runtime_state.get("entry_time") or now_dt.isoformat()
 
     ma10 = indicators.get("ma10")
     ma30 = indicators.get("ma30")
     adx = indicators.get("adx")
     rsi = indicators.get("rsi")
 
-    last_sell_ts = float(runtime_state.get("last_sell_ts") or 0.0)
-    cooldown_ok = (now_ts - last_sell_ts) >= BUY_COOLDOWN_SECONDS
+    buy_cooldown_ok = (now_ts - last_sell_ts) >= BUY_COOLDOWN_SECONDS
 
     # 1. VÉTELI LOGIKA
     if (
         not has_position
         and price > 0
-        and cooldown_ok
+        and buy_cooldown_ok
+        and free_usdt >= MIN_ORDER_USDT
         and ma10 is not None
         and ma30 is not None
         and adx is not None
@@ -574,6 +585,7 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
                     trailing_active = False
                     stop_loss_price = round(entry_price * (1.0 - STOP_LOSS_PCT / 100.0), 4)
                     runtime_state["entry_time"] = now_dt.isoformat()
+                    runtime_state["last_sold_crypto"] = 0.0
                     if not LIVE_TRADING_ENABLED:
                         free_crypto = round(free_crypto + fill_qty, 6)
                         free_usdt = round(max(0.0, free_usdt - fill_usdt), 4)
@@ -596,8 +608,8 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
                 print(f"[TRADE] BUY hiba: {exc}")
                 send_throttled_telegram(runtime_state, "trade_buy_err", f"BUY hiba: {exc}", now_ts)
 
-    # 2. ELADÁSI LOGIKA (Stop-Loss / Trailing Stop / Trendforduló)
-    elif has_position and price > 0 and entry_price:
+    # 2. ELADÁSI LOGIKA (Stop-Loss / Trailing Stop)
+    elif has_position and price > 0 and entry_price and sell_cooldown_ok:
         ep = float(entry_price)
         cur_high = max(float(highest_price or ep), price)
         highest_price = round(cur_high, 4)
@@ -617,19 +629,17 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
             sell_reason = f"STOP_LOSS ({cur_profit_pct:.2f}%)"
         elif trailing_active and trailing_stop_px is not None and price <= trailing_stop_px:
             sell_reason = f"TRAILING_STOP ({cur_profit_pct:.2f}%)"
-        elif ma10 is not None and ma30 is not None and float(ma10) < float(ma30) and cur_profit_pct > 0:
-            sell_reason = f"MA_CROSS_DOWN ({cur_profit_pct:.2f}%)"
 
         if sell_reason:
-            sell_qty = float(entry_size or free_crypto)
-            if LIVE_TRADING_ENABLED and free_crypto > 0:
-                sell_qty = min(sell_qty, free_crypto)
-            if sell_qty > 0:
+            sell_qty = round(min(float(entry_size or free_crypto), free_crypto), 6) if free_crypto > 0 else round(float(entry_size or 0.0), 6)
+            if sell_qty >= MIN_POSITION_CRYPTO:
                 try:
                     res = _place_pionex_order("SELL", size_crypto=sell_qty, price=price)
                     sell_px = float(res["avg_price"] or price)
                     sold_qty = float(res["filled_qty"] or sell_qty)
-                    sold_usdt = float(res["filled_usdt"] or (sold_qty * sell_px))
+                    if sold_qty > free_crypto and free_crypto > 0:
+                        sold_qty = free_crypto
+                    sold_usdt = round(sold_qty * sell_px, 2)
                     realized_pnl = round((sell_px - ep) * sold_qty, 2)
 
                     if not LIVE_TRADING_ENABLED:
@@ -645,13 +655,14 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
                     stop_loss_price = None
                     runtime_state["entry_time"] = None
                     runtime_state["last_sell_ts"] = now_ts
+                    runtime_state["last_sold_crypto"] = round(free_crypto, 6)
 
                     trade_rec = {
                         "time": now_dt.isoformat(),
                         "side": "SELL",
                         "price": round(sell_px, 4),
                         "size": round(sold_qty, 6),
-                        "usdt": round(sold_usdt, 2),
+                        "usdt": sold_usdt,
                         "pnl_usdt": realized_pnl,
                         "reason": sell_reason,
                         "order_id": res["order_id"],
@@ -741,7 +752,7 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
 def run_robot_forever():
     runtime_state = load_json_safe(
         STATE_FILE,
-        {"alert_timestamps": {}, "last_git_sync_ts": 0.0, "last_sell_ts": 0.0},
+        {"alert_timestamps": {}, "last_git_sync_ts": 0.0, "last_sell_ts": 0.0, "last_sold_crypto": 0.0},
     )
     print(
         f"[{utc_now().strftime('%Y-%m-%d %H:%M:%S')} UTC] "
