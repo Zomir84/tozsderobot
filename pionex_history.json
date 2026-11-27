@@ -58,5 +58,16 @@
     "total_usd": 52.25,
     "price": 70.44,
     "status": "TARTÁS"
+  },
+  {
+    "time": "2026-11-27T11:14:54.258173+00:00",
+    "side": "SELL",
+    "price": 70.6644,
+    "size": 24.811061,
+    "usdt": 1753.26,
+    "pnl_usdt": 15.74,
+    "reason": "TRAILING_STOP (4.61%)",
+    "order_id": "solbot_1795778095437",
+    "simulated": false
   }
 ]
