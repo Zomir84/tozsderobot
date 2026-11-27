@@ -306,6 +306,21 @@
       return `${n >= 0 ? "+" : "-"}$${Math.abs(n).toFixed(2)}`;
     }
 
+    function getItemPnlUsd(item) {
+      const sz = Number(item && item.size ? item.size : 0);
+      const sellPx = Number(item && item.price ? item.price : 0);
+      const pctMatch = String((item && item.reason) || "").match(/([+-]?\d+(?:[.,]\d+)?)\s*%/);
+      if (pctMatch && sz > 0 && sellPx > 0) {
+        const pctVal = Number(pctMatch[1].replace(",", "."));
+        const denom = 1 + pctVal / 100;
+        if (denom > 0) {
+          const impliedEntry = sellPx / denom;
+          return (sellPx - impliedEntry) * sz;
+        }
+      }
+      return Number(item && item.pnl_usdt != null ? item.pnl_usdt : 0);
+    }
+
     function computeExitLevels(s) {
       if (!s || !s.has_position || !Number(s.entry_price)) {
         return null;
@@ -396,24 +411,20 @@
       const todayStr = now.toISOString().slice(0, 10);
       document.getElementById("realized-date").textContent = `Nap: ${todayStr}`;
 
-      let daily = status && status.realized_daily != null ? Number(status.realized_daily) : null;
-      let weekly = status && status.realized_weekly != null ? Number(status.realized_weekly) : null;
-      let monthly = status && status.realized_monthly != null ? Number(status.realized_monthly) : null;
+      let daily = 0;
+      let weekly = 0;
+      let monthly = 0;
+      const weekAgo = Date.now() - 7 * 86400000;
+      const monthAgo = Date.now() - 30 * 86400000;
 
-      if (daily == null || weekly == null || monthly == null) {
-        daily = 0; weekly = 0; monthly = 0;
-        const weekAgo = Date.now() - 7 * 86400000;
-        const monthAgo = Date.now() - 30 * 86400000;
-
-        for (const item of (history || [])) {
-          if (String(item.side || "").toUpperCase() === "SELL" && item.pnl_usdt != null) {
-            const pnl = Number(item.pnl_usdt) || 0;
-            const ts = Date.parse(item.time || "");
-            if (!Number.isNaN(ts)) {
-              if ((item.time || "").slice(0, 10) === todayStr) daily += pnl;
-              if (ts >= weekAgo) weekly += pnl;
-              if (ts >= monthAgo) monthly += pnl;
-            }
+      for (const item of (history || [])) {
+        if (String(item.side || "").toUpperCase() === "SELL") {
+          const pnl = getItemPnlUsd(item);
+          const ts = Date.parse(item.time || "");
+          if (!Number.isNaN(ts)) {
+            if ((item.time || "").slice(0, 10) === todayStr) daily += pnl;
+            if (ts >= weekAgo) weekly += pnl;
+            if (ts >= monthAgo) monthly += pnl;
           }
         }
       }
@@ -626,22 +637,7 @@
         const side = (item.side || item.status || "INFO").toUpperCase();
         const cls = side === "BUY" ? "side-buy" : side === "SELL" ? "side-sell" : "side-hold";
         const px = item.price != null ? `$${Number(item.price).toFixed(2)}` : "—";
-
-        let pnlDisplay = formatSignedUsd(item.pnl_usdt || 0);
-        if (side === "SELL") {
-          const sz = Number(item.size || 0);
-          const sellPx = Number(item.price || 0);
-          const pctMatch = String(item.reason || "").match(/([+-]?\d+(?:[.,]\d+)?)\s*%/);
-          if (pctMatch && sz > 0 && sellPx > 0) {
-            const pctVal = Number(pctMatch[1].replace(",", "."));
-            const denom = 1 + pctVal / 100;
-            if (denom > 0) {
-              const impliedEntry = sellPx / denom;
-              const derivedPnl = (sellPx - impliedEntry) * sz;
-              pnlDisplay = formatSignedUsd(derivedPnl);
-            }
-          }
-        }
+        const pnlDisplay = formatSignedUsd(getItemPnlUsd(item));
 
         const extra = side === "SELL"
           ? `${Number(item.size || 0).toFixed(4)} SOL • PnL: ${pnlDisplay} (${item.reason || ""})`
