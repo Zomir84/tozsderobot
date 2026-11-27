@@ -66,6 +66,7 @@
       background: rgba(59, 130, 246, 0.18);
       color: #60a5fa;
       border: 1px solid rgba(59, 130, 246, 0.35);
+      white-space: nowrap;
     }
 
     .hero-card,
@@ -117,7 +118,7 @@
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
 
     input[type="text"],
@@ -132,10 +133,11 @@
     }
 
     textarea.json-input {
-      min-height: 85px;
+      min-height: 90px;
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-size: 0.78rem;
-      margin-bottom: 12px;
+      margin-top: 8px;
+      margin-bottom: 10px;
     }
 
     .action-btn {
@@ -164,7 +166,8 @@
       padding: 10px 12px;
       background: rgba(30, 41, 59, 0.65);
       font-weight: 700;
-      font-size: 0.9rem;
+      font-size: 0.88rem;
+      gap: 8px;
     }
 
     .pnl-profit {
@@ -198,7 +201,7 @@
     }
 
     .trade-excluded {
-      opacity: 0.7;
+      opacity: 0.72;
     }
 
     .notice-box {
@@ -258,11 +261,11 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background: rgba(15, 23, 42, 0.94);
-      border-top: 1px solid rgba(148, 163, 184, 0.16);
-      display: flex;
-      justify-content: space-around;
-      padding: 8px 0 12px 0;
+      background: #0f172a;
+      border-top: 1px solid rgba(148, 163, 184, 0.18);
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      padding: 6px 4px 10px 4px;
       z-index: 50;
     }
 
@@ -273,11 +276,13 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 3px;
-      font-size: 0.7rem;
+      justify-content: center;
+      gap: 2px;
+      font-size: 0.68rem;
       font-weight: 600;
-      padding: 4px 10px;
+      padding: 4px 2px;
       cursor: pointer;
+      white-space: nowrap;
     }
 
     .tab-btn.active {
@@ -324,17 +329,6 @@
 
   <section id="tab-trades" class="tab-view">
     <div class="card">
-      <div class="section-title">Valós adatforrás (pionex_status.json / pionex_history.json)</div>
-      <div class="controls-row">
-        <input id="custom-endpoint-input" type="text" value="./pionex_status.json" placeholder="Pl. ./pionex_status.json vagy ./pionex_history.json" />
-        <button type="button" class="action-btn" onclick="loadFromCustomEndpoint()">Forrás betöltése</button>
-        <button type="button" class="action-btn" onclick="loadRealTradesFromKnownSources()">Pionex fájlok betöltése</button>
-        <button type="button" class="action-btn" onclick="renderRealTradesFromTextarea()">JSON alkalmazása</button>
-      </div>
-      <textarea id="real-trades-json-input" class="json-input" placeholder="Ide illesztheted a robot valós JSON kimenetét..."></textarea>
-    </div>
-
-    <div class="card">
       <div class="section-title">Befektetett összegek (BUY) és eladási lépcsők</div>
       <div id="buy-ladder-panel"></div>
     </div>
@@ -343,6 +337,21 @@
       <div class="section-title">Kötések, naplópontok és napi PnL</div>
       <div id="trades-tab-content"></div>
     </div>
+
+    <details class="card">
+      <summary class="section-title" style="cursor: pointer; margin-bottom: 0;">Adatforrás és kézi JSON (haladó)</summary>
+      <div style="margin-top: 12px;">
+        <div class="controls-row">
+          <input id="custom-endpoint-input" type="text" value="./pionex_status.json" placeholder="Pl. ./pionex_status.json vagy ./pionex_history.json" />
+        </div>
+        <div class="controls-row">
+          <button type="button" class="action-btn" onclick="loadFromCustomEndpoint()">Forrás betöltése</button>
+          <button type="button" class="action-btn" onclick="loadRealTradesFromKnownSources()">Pionex fájlok betöltése</button>
+          <button type="button" class="action-btn" onclick="renderRealTradesFromTextarea()">JSON alkalmazása</button>
+        </div>
+        <textarea id="real-trades-json-input" class="json-input" placeholder="Ide illesztheted a robot valós JSON kimenetét..."></textarea>
+      </div>
+    </details>
   </section>
 
   <section id="tab-sim" class="tab-view">
@@ -879,7 +888,7 @@
           <div class="day-pnl-group">
             <div class="day-pnl-header">
               <span>${dateKey}</span>
-              <span class="${badgeClass}">Tiszta napi PnL: ${formattedDayPnl}</span>
+              <span class="${badgeClass}">Napi PnL: ${formattedDayPnl}</span>
             </div>
             <table>
               <thead>
