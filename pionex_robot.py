@@ -27,6 +27,7 @@ ORDER_AMOUNT_USDT = float(os.getenv("ORDER_AMOUNT_USDT", "15.0"))
 MIN_ORDER_USDT = float(os.getenv("MIN_ORDER_USDT", "5.0"))
 MIN_POSITION_CRYPTO = float(os.getenv("MIN_POSITION_CRYPTO", "0.01"))
 DEFAULT_ADOPT_ENTRY_PRICE = float(os.getenv("DEFAULT_ADOPT_ENTRY_PRICE", "70.03"))
+ZERO_POSITION_CONFIRM_CYCLES = int(os.getenv("ZERO_POSITION_CONFIRM_CYCLES", "3"))
 
 CYCLE_SECONDS = int(os.getenv("CYCLE_SECONDS", "45"))
 GIT_SYNC_SECONDS = int(os.getenv("GIT_SYNC_SECONDS", "120"))
@@ -345,7 +346,7 @@ def _place_pionex_order(side, amount_usdt=None, size_crypto=None, price=None):
     if side.upper() == "BUY":
         body["amount"] = f"{float(amount_usdt):.2f}"
     else:
-        body["size"] = f"{float(size_crypto):.6f}"
+        body["size"] = f"{float(size_crypto):.4f}"
 
     if not LIVE_TRADING_ENABLED:
         est_price = float(price or 0.0)
@@ -396,6 +397,7 @@ def fetch_pionex_snapshot(runtime_state, previous_status, now_ts):
     price = float(previous_status.get("price") or runtime_state.get("last_price") or 0.0)
     free_usdt = float(previous_status.get("free_usdt") or runtime_state.get("free_usdt") or 0.0)
     free_crypto = float(previous_status.get("free_crypto") or runtime_state.get("free_crypto") or 0.0)
+    balances_ok = False
 
     try:
         live_price = _fetch_pionex_public_price()
@@ -408,6 +410,7 @@ def fetch_pionex_snapshot(runtime_state, previous_status, now_ts):
     try:
         bal_map = _fetch_pionex_balances()
         if bal_map is not None:
+            balances_ok = True
             if QUOTE_COIN.upper() in bal_map:
                 free_usdt = round(bal_map[QUOTE_COIN.upper()], 4)
             if BASE_COIN.upper() in bal_map:
@@ -428,6 +431,7 @@ def fetch_pionex_snapshot(runtime_state, previous_status, now_ts):
         "price": price,
         "free_usdt": free_usdt,
         "free_crypto": free_crypto,
+        "balances_ok": balances_ok,
         "next_bet_usdt": next_bet_usdt,
         "recent_trades": recent_trades,
     }
@@ -514,6 +518,7 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
     price = float(pionex["price"])
     free_usdt = float(pionex["free_usdt"])
     free_crypto = float(pionex["free_crypto"])
+    balances_ok = bool(pionex.get("balances_ok", False))
     recent_trades = list(pionex.get("recent_trades") or [])
 
     has_position = bool(runtime_state.get("has_position", False))
@@ -523,6 +528,7 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
     highest_price = runtime_state.get("highest_price")
     trailing_active = bool(runtime_state.get("trailing_active", False))
     stop_loss_price = runtime_state.get("stop_loss_price")
+    zero_pos_streak = int(runtime_state.get("zero_pos_streak") or 0)
 
     last_sell_ts = float(runtime_state.get("last_sell_ts") or 0.0)
     last_sold_crypto = float(runtime_state.get("last_sold_crypto") or 0.0)
@@ -534,27 +540,32 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
         and not sell_cooldown_ok
     )
 
-    if not has_position and free_crypto >= MIN_POSITION_CRYPTO and price > 0 and not unchanged_after_sell:
-        adopted_entry = round(float(entry_price or DEFAULT_ADOPT_ENTRY_PRICE), 4)
-        adopted_size = round(float(free_crypto), 6)
-        has_position = True
-        entry_price = adopted_entry
-        entry_size = adopted_size
-        entry_cost_usdt = round(adopted_size * adopted_entry, 2)
-        highest_price = round(max(price, adopted_entry), 4)
-        trailing_active = False
-        stop_loss_price = round(adopted_entry * (1.0 - STOP_LOSS_PCT / 100.0), 4)
-        runtime_state["entry_time"] = runtime_state.get("entry_time") or now_dt.isoformat()
-        print(f"[POS] Meglévő {BASE_COIN} átvéve: {adopted_size} @ ${adopted_entry}")
-    elif has_position and free_crypto < MIN_POSITION_CRYPTO:
-        has_position = False
-        entry_price = None
-        entry_size = None
-        entry_cost_usdt = 0.0
-        highest_price = None
-        trailing_active = False
-        stop_loss_price = None
-        runtime_state["entry_time"] = None
+    if free_crypto >= MIN_POSITION_CRYPTO:
+        zero_pos_streak = 0
+        if not has_position and price > 0 and not unchanged_after_sell:
+            adopted_entry = round(float(entry_price or DEFAULT_ADOPT_ENTRY_PRICE), 4)
+            adopted_size = round(float(free_crypto), 6)
+            has_position = True
+            entry_price = adopted_entry
+            entry_size = adopted_size
+            entry_cost_usdt = round(adopted_size * adopted_entry, 2)
+            highest_price = round(max(price, adopted_entry), 4)
+            trailing_active = False
+            stop_loss_price = round(adopted_entry * (1.0 - STOP_LOSS_PCT / 100.0), 4)
+            runtime_state["entry_time"] = runtime_state.get("entry_time") or now_dt.isoformat()
+            print(f"[POS] Meglévő {BASE_COIN} átvéve: {adopted_size} @ ${adopted_entry}")
+    elif has_position and balances_ok:
+        zero_pos_streak += 1
+        if zero_pos_streak >= max(1, ZERO_POSITION_CONFIRM_CYCLES):
+            has_position = False
+            entry_price = None
+            entry_size = None
+            entry_cost_usdt = 0.0
+            highest_price = None
+            trailing_active = False
+            stop_loss_price = None
+            runtime_state["entry_time"] = None
+            zero_pos_streak = 0
 
     ma10 = indicators.get("ma10")
     ma30 = indicators.get("ma30")
@@ -593,6 +604,7 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
                     stop_loss_price = round(entry_price * (1.0 - STOP_LOSS_PCT / 100.0), 4)
                     runtime_state["entry_time"] = now_dt.isoformat()
                     runtime_state["last_sold_crypto"] = 0.0
+                    zero_pos_streak = 0
                     if not LIVE_TRADING_ENABLED:
                         free_crypto = round(free_crypto + fill_qty, 6)
                         free_usdt = round(max(0.0, free_usdt - fill_usdt), 4)
@@ -637,11 +649,12 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
             sell_reason = f"TRAILING_STOP ({cur_profit_pct:.2f}%)"
 
         if sell_reason:
-            sell_qty = (
-                round(min(float(entry_size or free_crypto), free_crypto), 6)
+            raw_target_qty = (
+                min(float(entry_size or free_crypto), free_crypto)
                 if free_crypto > 0
-                else round(float(entry_size or 0.0), 6)
+                else float(entry_size or 0.0)
             )
+            sell_qty = math.floor(raw_target_qty * 10000.0) / 10000.0
             if sell_qty >= MIN_POSITION_CRYPTO:
                 try:
                     res = _place_pionex_order("SELL", size_crypto=sell_qty, price=price)
@@ -663,6 +676,7 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
                     highest_price = None
                     trailing_active = False
                     stop_loss_price = None
+                    zero_pos_streak = 0
                     runtime_state["entry_time"] = None
                     runtime_state["last_sell_ts"] = now_ts
                     runtime_state["last_sold_crypto"] = round(free_crypto, 6)
@@ -710,6 +724,7 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
     runtime_state["highest_price"] = highest_price
     runtime_state["trailing_active"] = trailing_active
     runtime_state["stop_loss_price"] = stop_loss_price
+    runtime_state["zero_pos_streak"] = zero_pos_streak
     runtime_state["last_price"] = price
     runtime_state["free_usdt"] = free_usdt
     runtime_state["free_crypto"] = free_crypto
@@ -764,7 +779,13 @@ def evaluate_and_execute_cycle(runtime_state, previous_status, now_dt, now_ts):
 def run_robot_forever():
     runtime_state = load_json_safe(
         STATE_FILE,
-        {"alert_timestamps": {}, "last_git_sync_ts": 0.0, "last_sell_ts": 0.0, "last_sold_crypto": 0.0},
+        {
+            "alert_timestamps": {},
+            "last_git_sync_ts": 0.0,
+            "last_sell_ts": 0.0,
+            "last_sold_crypto": 0.0,
+            "zero_pos_streak": 0,
+        },
     )
     print(
         f"[{utc_now().strftime('%Y-%m-%d %H:%M:%S')} UTC] "
