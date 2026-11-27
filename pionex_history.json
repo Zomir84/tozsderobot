@@ -80,5 +80,16 @@
     "reason": "MA_CROSS_DOWN (3.33%)",
     "order_id": "solbot_1795808248615",
     "simulated": false
+  },
+  {
+    "time": "2026-11-27T19:38:15.656582+00:00",
+    "side": "SELL",
+    "price": 70.6644,
+    "size": 24.811061,
+    "usdt": 1753.26,
+    "pnl_usdt": 15.74,
+    "reason": "MA_CROSS_DOWN (3.43%)",
+    "order_id": "solbot_1795808296459",
+    "simulated": false
   }
 ]
