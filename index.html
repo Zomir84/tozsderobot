@@ -220,10 +220,6 @@
       font-weight: 600;
     }
 
-    .trade-excluded {
-      opacity: 0.72;
-    }
-
     .notice-box {
       background: var(--card-inner);
       border: 1px solid var(--border);
@@ -232,6 +228,30 @@
       padding: 12px;
       font-size: 0.84rem;
       margin-bottom: 12px;
+    }
+
+    .action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .action-btn {
+      background: var(--card-inner);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 7px 12px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .action-btn.active {
+      border-color: var(--blue);
+      color: #60a5fa;
+      background: rgba(59, 130, 246, 0.14);
     }
 
     canvas {
@@ -362,7 +382,15 @@
 
   <section id="tab-trades" class="tab-view">
     <div class="card">
-      <div class="section-title">Kötések és napi PnL</div>
+      <div class="chart-head">
+        <div class="section-title">Kötések és napi PnL</div>
+        <button id="refreshBtn" type="button" class="action-btn" onclick="loadPionexRealFiles()">Frissítés</button>
+      </div>
+      <div class="action-row">
+        <button id="filterAllBtn" type="button" class="action-btn active" onclick="setTradeFilter('all')">Minden napló</button>
+        <button id="filterTradesBtn" type="button" class="action-btn" onclick="setTradeFilter('trades')">Csak BUY / SELL</button>
+        <button id="archiveBtn" type="button" class="action-btn" onclick="togglePionexArchive()">11/26 Pionex előzmény</button>
+      </div>
       <div id="trades-tab-content"></div>
     </div>
   </section>
@@ -403,8 +431,40 @@
 
   <script>
     const REFERENCE_BUY_PRICE = 70.03;
+    const PIONEX_1126_ARCHIVE = [
+      {
+        time: "2026-11-26T03:39:33",
+        side: "BUY",
+        reason: "Pionex Limit & Market",
+        price: 71.26,
+        size: 0.7295,
+        usdt: 51.98,
+        source: "pionex_archive"
+      },
+      {
+        time: "2026-11-26T16:09:12",
+        side: "SELL",
+        reason: "Pionex Market",
+        price: 69.86,
+        size: 0.73,
+        usdt: 50.9978,
+        source: "pionex_archive"
+      },
+      {
+        time: "2026-11-26T16:09:31",
+        side: "BUY",
+        reason: "Pionex Market (ref. vétel)",
+        price: 70.03,
+        size: 0.7281,
+        usdt: 50.98,
+        source: "pionex_archive"
+      }
+    ];
+
     let latestRealPayload = null;
     let latestRealEntries = [];
+    let currentTradeFilter = "all";
+    let includeArchive = false;
 
     function switchTab(tabName, btnElement) {
       document.querySelectorAll(".tab-view").forEach((el) => el.classList.remove("active"));
@@ -413,11 +473,38 @@
       if (target) target.classList.add("active");
       if (btnElement) btnElement.classList.add("active");
       if (tabName === "overview") {
-        renderTrendChart("overview-trend-canvas", "overviewDelta", "overviewChartStats", latestRealPayload, latestRealEntries);
+        renderTrendChart("overview-trend-canvas", "overviewDelta", "overviewChartStats", latestRealPayload, getMergedEntries());
       } else if (tabName === "charts") {
-        renderChartsTab(latestRealPayload, latestRealEntries);
+        renderChartsTab(latestRealPayload, getMergedEntries());
       }
     }
+
+    function getMergedEntries() {
+      const base = Array.isArray(latestRealEntries) ? latestRealEntries : [];
+      if (!includeArchive) return base;
+      return [...PIONEX_1126_ARCHIVE, ...base];
+    }
+
+    function setTradeFilter(mode) {
+      currentTradeFilter = mode === "trades" ? "trades" : "all";
+      const allBtn = document.getElementById("filterAllBtn");
+      const trBtn = document.getElementById("filterTradesBtn");
+      if (allBtn) allBtn.classList.toggle("active", currentTradeFilter === "all");
+      if (trBtn) trBtn.classList.toggle("active", currentTradeFilter === "trades");
+      renderRealTradesTab(getMergedEntries(), latestSourceName, "trades-tab-content");
+    }
+
+    function togglePionexArchive() {
+      includeArchive = !includeArchive;
+      const btn = document.getElementById("archiveBtn");
+      if (btn) btn.classList.toggle("active", includeArchive);
+      const merged = getMergedEntries();
+      renderRealTradesTab(merged, latestSourceName, "trades-tab-content");
+      renderTrendChart("overview-trend-canvas", "overviewDelta", "overviewChartStats", latestRealPayload, merged);
+      renderChartsTab(latestRealPayload, merged);
+    }
+
+    let latestSourceName = "pionex_status.json + pionex_history.json";
 
     function getEntryTime(obj) {
       if (!obj || typeof obj !== "object") return null;
@@ -466,20 +553,6 @@
           ? entry.realized_pnl_usdt
           : NaN;
       return Number.isFinite(val) ? val : NaN;
-    }
-
-    function isLargeLegacySell(entry) {
-      if (!entry || typeof entry !== "object") return false;
-      const side = String(entry.side || "").toUpperCase();
-      const sz = getEntrySize(entry);
-      return entry.is_legacy === true || entry.source === "manual_history" || (side === "SELL" && Math.abs(sz - 24.8111) < 0.01);
-    }
-
-    function isReliableRealPnlTrade(entry) {
-      if (!entry || typeof entry !== "object") return false;
-      if (!entry.side) return false;
-      const pnl = getEntryPnl(entry);
-      return Number.isFinite(pnl);
     }
 
     function getRealTradeDateKey(entry) {
@@ -703,19 +776,17 @@
         const x = toX(i);
         const y = toY(p.price);
         const isSell = p.side === "SELL";
+        const isBuy = p.side === "BUY";
         const isLast = i === pts.length - 1;
-        if (isSell || isLast) {
+        if (isSell || isBuy || isLast) {
           ctx.save();
-          ctx.fillStyle = isSell ? "#ef4444" : "#f8fafc";
+          ctx.fillStyle = isSell ? "#ef4444" : isBuy ? "#10b981" : "#f8fafc";
           ctx.beginPath();
-          ctx.arc(x, y, isSell ? 4.5 : 4, 0, Math.PI * 2);
+          ctx.arc(x, y, 4.5, 0, Math.PI * 2);
           ctx.fill();
           ctx.font = "10px ui-monospace, monospace";
-          ctx.fillText(
-            isSell ? `SELL $${p.price.toFixed(2)}` : `$${p.price.toFixed(2)}`,
-            Math.min(x + 6, width - 82),
-            Math.max(y - 6, padTop + 10)
-          );
+          const tag = isSell ? `SELL $${p.price.toFixed(2)}` : isBuy ? `BUY $${p.price.toFixed(2)}` : `$${p.price.toFixed(2)}`;
+          ctx.fillText(tag, Math.min(x + 6, width - 86), Math.max(y - 6, padTop + 10));
           ctx.restore();
         }
       });
@@ -893,25 +964,22 @@
 
       const list = Array.isArray(entries) ? entries : [];
       const pnlItems = [];
-      let totalCleanPnl = 0;
+      let totalPnl = 0;
 
       for (const entry of list) {
         if (!entry || typeof entry !== "object") continue;
         const pnl = getEntryPnl(entry);
         if (!Number.isFinite(pnl)) continue;
-        const largeSell = isLargeLegacySell(entry);
-        if (!largeSell) {
-          totalCleanPnl = Number((totalCleanPnl + pnl).toFixed(4));
-        }
+        totalPnl = Number((totalPnl + pnl).toFixed(4));
         const rawT = getEntryTime(entry);
         const label = rawT ? formatTimeLabel(rawT).slice(5) : entry.side || "PnL";
-        pnlItems.push({ label, pnl, excluded: largeSell });
+        pnlItems.push({ label, pnl });
       }
 
       if (badgeEl) {
-        const sign = totalCleanPnl > 0 ? "+" : totalCleanPnl < 0 ? "-" : "";
-        badgeEl.textContent = `${sign}$${Math.abs(totalCleanPnl).toFixed(2)}`;
-        badgeEl.className = `chart-delta ${totalCleanPnl > 0 ? "pnl-profit" : totalCleanPnl < 0 ? "pnl-deficit" : "pnl-neutral"}`;
+        const sign = totalPnl > 0 ? "+" : totalPnl < 0 ? "-" : "";
+        badgeEl.textContent = `${sign}$${Math.abs(totalPnl).toFixed(2)}`;
+        badgeEl.className = `chart-delta ${totalPnl > 0 ? "pnl-profit" : totalPnl < 0 ? "pnl-deficit" : "pnl-neutral"}`;
       }
 
       if (pnlItems.length === 0) {
@@ -952,7 +1020,7 @@
         const h = (Math.abs(item.pnl) / maxAbs) * (plotH * 0.42);
         const y = item.pnl >= 0 ? zeroY - h : zeroY;
 
-        ctx.fillStyle = item.excluded ? "#64748b" : item.pnl >= 0 ? "#10b981" : "#ef4444";
+        ctx.fillStyle = item.pnl >= 0 ? "#10b981" : "#ef4444";
         ctx.fillRect(cx - barW / 2, y, barW, Math.max(2, h));
 
         ctx.fillStyle = "#f8fafc";
@@ -970,7 +1038,7 @@
 
       if (statsEl) {
         statsEl.innerHTML = `
-          <span>Tiszta realizált PnL: <strong>${totalCleanPnl >= 0 ? "+" : "-"}$${Math.abs(totalCleanPnl).toFixed(2)}</strong></span>
+          <span>Összes realizált PnL: <strong>${totalPnl >= 0 ? "+" : "-"}$${Math.abs(totalPnl).toFixed(2)}</strong></span>
           <span>Tételek: <strong>${pnlItems.length}</strong></span>
         `;
       }
@@ -986,27 +1054,30 @@
       const container = document.getElementById(containerId);
       const updatedText = document.getElementById("updatedText");
       if (updatedText) {
-        updatedText.textContent = `Forrás: ${sourceName}`;
+        updatedText.textContent = `Forrás: ${sourceName}${includeArchive ? " + 11/26 előzmény" : ""}`;
       }
       if (!container) return;
 
-      if (!Array.isArray(entries) || entries.length === 0) {
-        container.innerHTML = `<div class="notice-box"><strong>Nincs valós kötésadat:</strong> A(z) <code>${sourceName}</code> forrás nem tartalmaz bejegyzéseket.</div>`;
+      const filtered = (Array.isArray(entries) ? entries : []).filter((entry) => {
+        if (!entry || typeof entry !== "object") return false;
+        if (currentTradeFilter === "trades") return Boolean(entry.side);
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `<div class="notice-box"><strong>Nincs megjeleníthető tétel:</strong> A(z) <code>${sourceName}</code> forrásban nincs ilyen bejegyzés.</div>`;
         return;
       }
 
       const dailyPnl = new Map();
       const groupedRows = new Map();
 
-      for (const entry of entries) {
-        if (!entry || typeof entry !== "object") continue;
+      for (const entry of filtered) {
         const dateKey = getRealTradeDateKey(entry) || "ismeretlen-datum";
         const pnlValue = getEntryPnl(entry);
         const hasValidPnl = Number.isFinite(pnlValue);
-        const largeSell = isLargeLegacySell(entry);
-        const isCleanTrade = isReliableRealPnlTrade(entry) && !largeSell;
 
-        if (isCleanTrade && dateKey !== "ismeretlen-datum") {
+        if (hasValidPnl && dateKey !== "ismeretlen-datum") {
           const prev = dailyPnl.get(dateKey) || 0;
           dailyPnl.set(dateKey, Number((prev + pnlValue).toFixed(4)));
         }
@@ -1033,21 +1104,21 @@
           ? `${pnlValue >= 0 ? "+" : "-"}$${Math.abs(pnlValue).toFixed(2)}`
           : "-";
 
-        const statusLabel = largeSell
-          ? "Kiugró SELL (24.81 SOL)"
-          : isCleanTrade
-          ? "Tiszta PnL"
-          : entry.status === "TARTÁS"
-          ? "Állapot / árfolyam"
-          : "Nincs PnL";
+        const noteText =
+          entry.source === "pionex_archive"
+            ? "11/26 Pionex"
+            : hasValidPnl
+            ? "Kötés PnL"
+            : entry.status === "TARTÁS"
+            ? "Állapot / árfolyam"
+            : "-";
 
         groupedRows.get(dateKey).push({
           sideOrStatus,
           solVal,
           usdtVal,
           pnlText,
-          statusLabel,
-          isExcluded: largeSell,
+          noteText,
         });
       }
 
@@ -1064,12 +1135,12 @@
           .get(dateKey)
           .map(
             (r) => `
-              <tr class="${r.isExcluded ? "trade-excluded" : ""}">
+              <tr>
                 <td>${r.sideOrStatus}</td>
                 <td>${r.solVal}</td>
                 <td>${r.usdtVal}</td>
                 <td>${r.pnlText}</td>
-                <td>${r.statusLabel}</td>
+                <td>${r.noteText}</td>
               </tr>
             `
           )
@@ -1174,11 +1245,13 @@
     function refreshAllRobotViews(payload, sourceName = "valós forrás") {
       latestRealPayload = payload;
       latestRealEntries = extractEntriesArray(payload) || [];
+      latestSourceName = sourceName;
 
-      updateOverviewFromPayload(payload, latestRealEntries);
-      renderRealTradesTab(latestRealEntries, sourceName, "trades-tab-content");
-      renderTrendChart("overview-trend-canvas", "overviewDelta", "overviewChartStats", latestRealPayload, latestRealEntries);
-      renderChartsTab(latestRealPayload, latestRealEntries);
+      const merged = getMergedEntries();
+      updateOverviewFromPayload(payload, merged);
+      renderRealTradesTab(merged, sourceName, "trades-tab-content");
+      renderTrendChart("overview-trend-canvas", "overviewDelta", "overviewChartStats", latestRealPayload, merged);
+      renderChartsTab(latestRealPayload, merged);
       updateSim();
     }
 
@@ -1190,12 +1263,12 @@
       let historyData = null;
 
       try {
-        const statusResp = await fetch("./pionex_status.json", { cache: "no-store" });
+        const statusResp = await fetch(`./pionex_status.json?t=${Date.now()}`, { cache: "no-store" });
         if (statusResp.ok) statusData = await statusResp.json();
       } catch (_) {}
 
       try {
-        const historyResp = await fetch("./pionex_history.json", { cache: "no-store" });
+        const historyResp = await fetch(`./pionex_history.json?t=${Date.now()}`, { cache: "no-store" });
         if (historyResp.ok) historyData = await historyResp.json();
       } catch (_) {}
 
