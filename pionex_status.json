@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-11-28T16:57:25",
+  "updated_at": "2026-11-28T16:57:42",
   "symbol": "SOL_USDT",
   "live": true,
   "price": 70.67,
@@ -20,7 +20,7 @@
   "rsi": 43.5,
   "adx": 14.6,
   "atr_cb_pct": 0.6,
-  "vol_ratio": 0.97,
+  "vol_ratio": 0.98,
   "htf_trend_ok": true,
   "chart_daily": [
     72.18,
