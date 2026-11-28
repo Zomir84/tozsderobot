@@ -105,7 +105,7 @@
     }
     canvas {
       width: 100%;
-      height: 230px;
+      height: 245px;
       background: #0b101b;
       border-radius: 14px;
       border: 1px solid rgba(148, 163, 184, 0.12);
@@ -122,6 +122,7 @@
     }
     .leg-item { display: inline-flex; align-items: center; gap: 6px; }
     .leg-dot { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
+    .leg-sq { width: 9px; height: 9px; border-radius: 2px; border: 1px solid #fff; display: inline-block; }
     .levels-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -263,10 +264,12 @@
         <canvas id="overviewChart"></canvas>
         <div class="legend">
           <span class="leg-item"><i class="leg-dot" style="background:#22c55e;"></i>Árfolyam</span>
+          <span class="leg-item"><i class="leg-sq" style="background:#22c55e;"></i>Vétel (BUY)</span>
+          <span class="leg-item"><i class="leg-sq" style="background:#ef4444;"></i>Eladás (SELL)</span>
           <span class="leg-item"><i class="leg-dot" style="background:#60a5fa;"></i>Bekerülés</span>
           <span class="leg-item"><i class="leg-dot" style="background:#fbbf24;"></i>Trailing start (+1.5%)</span>
-          <span class="leg-item"><i class="leg-dot" style="background:#f97316;"></i>Trailing stop (-0.8%)</span>
-          <span class="leg-item"><i class="leg-dot" style="background:#ef4444;"></i>Stop-Loss (-5.0%)</span>
+          <span class="leg-item"><i class="leg-dot" style="background:#f97316;"></i>ATR Trailing</span>
+          <span class="leg-item"><i class="leg-dot" style="background:#ef4444;"></i>Stop-Loss (-3.5%)</span>
         </div>
         <div id="overview-minmax" class="muted" style="margin-top: 10px;">Min: — • Max: —</div>
         <div id="indicators-line" class="muted" style="margin-top: 4px;">
@@ -279,7 +282,7 @@
       <div class="card">
         <div class="chart-head">
           <div>
-            <div class="muted">Tőkegörbe ($55.00 alap • 100% tőkébe forgatva)</div>
+            <div class="muted">Tőkegörbe ($55.00 alap • 50% visszaforgatva)</div>
             <div id="capital-pnl-headline" class="med-val">+$0.00 (0.00%)</div>
           </div>
           <div id="capital-minmax" class="muted">Kezdőtőke: $55.00</div>
@@ -330,7 +333,7 @@
   <script>
     const START_CAPITAL_USD = 55.0;
     const BASE_BET_USD = 15.0;
-    const REINVEST_SHARE = 1.0;
+    const DEFAULT_REINVEST_SHARE = 0.5;
     const MAX_PLAUSIBLE_TRADE_USD = 500.0;
     const LIVE_SERIES_KEY = "pionex_sol_live_series_v1";
 
@@ -348,6 +351,26 @@
       } catch (_) {
         return [];
       }
+    }
+
+    function formatShortTime(isoStr) {
+      if (!isoStr) return "";
+      const s = String(isoStr).replace("T", " ");
+      if (s.length >= 16 && s[4] === "-") {
+        return `${s.slice(5, 7)}.${s.slice(8, 10)} ${s.slice(11, 16)}`;
+      }
+      return s.slice(0, 11);
+    }
+
+    function parseLabelToMinutes(lbl) {
+      // "MM.DD HH:MM" -> összehasonlítható percérték az éven belül
+      const m = String(lbl || "").match(/(\d{2})\.(\d{2})\s+(\d{2}):(\d{2})/);
+      if (!m) return null;
+      const month = Number(m[1]);
+      const day = Number(m[2]);
+      const hour = Number(m[3]);
+      const min = Number(m[4]);
+      return (((month * 31 + day) * 24) + hour) * 60 + min;
     }
 
     function recordLivePrice(status) {
@@ -393,6 +416,40 @@
       return `${n >= 0 ? "+" : "-"}$${Math.abs(n).toFixed(2)}`;
     }
 
+    function getNormalizedStatus(s) {
+      if (!s) return null;
+      const price = Number(s.price || 0);
+      const freeUsdt = Number(s.free_usdt || 0);
+      const freeSol = Number(s.free_sol != null ? s.free_sol : (s.free_crypto || 0));
+      const totalUsd = Number(
+        s.equity_usdt != null
+          ? s.equity_usdt
+          : (s.total_usd != null ? s.total_usd : (freeUsdt + freeSol * price))
+      );
+      const entryPrice = Number(s.entry_price || 0);
+      const hasPos = s.has_position != null ? Boolean(s.has_position) : (freeSol * price >= 5.0);
+      const profitPct = Number(s.pnl_pct != null ? s.pnl_pct : (s.profit_pct || 0));
+      const profitUsdt = s.profit_usdt != null
+        ? Number(s.profit_usdt)
+        : (hasPos && entryPrice > 0 ? (price - entryPrice) * freeSol : 0);
+      const reinvestShare = s.reinvest_share != null ? Number(s.reinvest_share) : DEFAULT_REINVEST_SHARE;
+      const atrCbPct = Number(s.atr_cb_pct != null ? s.atr_cb_pct : 0.8);
+
+      return {
+        raw: s,
+        price,
+        freeUsdt,
+        freeSol,
+        totalUsd,
+        entryPrice,
+        hasPos,
+        profitPct,
+        profitUsdt,
+        reinvestShare,
+        atrCbPct,
+      };
+    }
+
     function isPlausibleHistoryItem(item) {
       if (!item || typeof item !== "object") return false;
       const sz = Math.abs(Number(item.size || 0));
@@ -427,6 +484,9 @@
 
     function getItemPnlUsd(item) {
       if (!isPlausibleHistoryItem(item)) return 0;
+      const direct = Number(item && item.pnl_usdt != null ? item.pnl_usdt : 0);
+      if (direct !== 0 && Math.abs(direct) <= MAX_PLAUSIBLE_TRADE_USD * 0.5) return direct;
+
       const sz = Number(item && item.size ? item.size : 0);
       const sellPx = Number(item && item.price ? item.price : 0);
       const pctMatch = String((item && item.reason) || "").match(/([+-]?\d+(?:[.,]\d+)?)\s*%/);
@@ -439,20 +499,20 @@
           if (Math.abs(est) <= MAX_PLAUSIBLE_TRADE_USD * 0.5) return est;
         }
       }
-      const direct = Number(item && item.pnl_usdt != null ? item.pnl_usdt : 0);
-      return Math.abs(direct) <= MAX_PLAUSIBLE_TRADE_USD * 0.5 ? direct : 0;
+      return 0;
     }
 
     function computeExitLevels(s) {
-      if (!s || !s.has_position || !Number(s.entry_price)) {
+      const ns = getNormalizedStatus(s);
+      if (!ns || !ns.hasPos || !(ns.entryPrice > 0)) {
         return null;
       }
-      const entry = Number(s.entry_price);
-      const price = Number(s.price || entry);
+      const entry = ns.entryPrice;
+      const price = ns.price || entry;
       const high = Math.max(Number(s.highest_price || entry), price);
-      const slPct = Number(s.stop_loss_pct || 5.0);
+      const slPct = Number(s.stop_loss_pct || 3.5);
       const trailStartPct = 1.5;
-      const trailCbPct = 0.8;
+      const trailCbPct = ns.atrCbPct;
 
       const stopLoss = s.stop_loss_price != null ? Number(s.stop_loss_price) : entry * (1 - slPct / 100);
       const trailStart = entry * (1 + trailStartPct / 100);
@@ -472,31 +532,45 @@
       };
     }
 
-    function getChartPricePoints() {
+    function getChartData() {
       if (currentTimeframe === "daily" && latestStatus && Array.isArray(latestStatus.chart_daily) && latestStatus.chart_daily.length >= 2) {
-        return latestStatus.chart_daily.map((v) => Number(v)).filter((v) => v > 0);
+        const prices = latestStatus.chart_daily.map((v) => Number(v));
+        const times = Array.isArray(latestStatus.chart_daily_times) ? latestStatus.chart_daily_times : [];
+        return { prices, times };
       }
       if (currentTimeframe === "weekly" && latestStatus && Array.isArray(latestStatus.chart_weekly) && latestStatus.chart_weekly.length >= 2) {
-        return latestStatus.chart_weekly.map((v) => Number(v)).filter((v) => v > 0);
+        const prices = latestStatus.chart_weekly.map((v) => Number(v));
+        const times = Array.isArray(latestStatus.chart_weekly_times) ? latestStatus.chart_weekly_times : [];
+        return { prices, times };
       }
       if (livePriceSeries.length >= 2) {
-        return livePriceSeries.map((p) => Number(p.price));
+        return {
+          prices: livePriceSeries.map((p) => Number(p.price)),
+          times: livePriceSeries.map((p) => formatShortTime(p.time)),
+        };
       }
-      const fallback = [];
+      const prices = [];
+      const times = [];
       for (const row of latestHistory) {
         const px = Number(row.price);
-        if (!Number.isNaN(px) && px > 0 && px < 10000) fallback.push(px);
+        if (!Number.isNaN(px) && px > 0 && px < 10000) {
+          prices.push(px);
+          times.push(formatShortTime(row.time));
+        }
       }
       if (latestStatus && Number(latestStatus.price) > 0) {
-        fallback.push(Number(latestStatus.price));
+        prices.push(Number(latestStatus.price));
+        times.push(formatShortTime(latestStatus.updated_at));
       }
-      return fallback;
+      return { prices, times };
     }
 
     function computeCapitalCurve(status, history) {
-      const currentTotal = status && Number(status.total_usd) > 0 ? Number(status.total_usd) : 0;
+      const ns = getNormalizedStatus(status);
+      const currentTotal = ns && ns.totalUsd > 0 ? ns.totalUsd : 0;
       const rows = sanitizeHistory(history);
       const startCapital = status && Number(status.start_capital_usd) > 0 ? Number(status.start_capital_usd) : START_CAPITAL_USD;
+      const reinvestShare = ns ? ns.reinvestShare : DEFAULT_REINVEST_SHARE;
 
       const curve = [Number(startCapital.toFixed(2))];
       let runningUsd = startCapital;
@@ -528,15 +602,11 @@
       const peakTotal = curve.length ? Math.max(...curve) : finalTotal;
       const troughTotal = curve.length ? Math.min(...curve) : finalTotal;
 
-      const reinvestProfit =
-        status && status.reinvested_profit_usdt != null
-          ? Number(status.reinvested_profit_usdt)
-          : positiveRealizedSum * REINVEST_SHARE;
-      const pocketProfit = 0;
-      const nextBet =
-        status && status.next_bet_usdt != null
-          ? Number(status.next_bet_usdt)
-          : BASE_BET_USD + reinvestProfit;
+      const reinvestProfit = positiveRealizedSum * reinvestShare;
+      const pocketProfit = status && status.pocket_usdt != null
+        ? Number(status.pocket_usdt)
+        : positiveRealizedSum * (1 - reinvestShare);
+      const nextBet = BASE_BET_USD + reinvestProfit;
 
       return {
         startCapital,
@@ -547,6 +617,7 @@
         troughTotal,
         reinvestProfit,
         pocketProfit,
+        reinvestShare,
         nextBet,
         curve,
       };
@@ -566,11 +637,12 @@
         mmEl.textContent = `Kezdőtőke: $${info.startCapital.toFixed(2)}`;
       }
       if (boxEl) {
+        const pctReinv = Math.round(info.reinvestShare * 100);
         boxEl.innerHTML = `
           <div class="lvl-chip">
-            <span class="muted">Tőkébe forgatva (100%)</span>
+            <span class="muted">Tőkébe forgatva (${pctReinv}%)</span>
             <b style="color:#22c55e;">+$${info.reinvestProfit.toFixed(2)}</b>
-            <span class="muted" style="font-size:0.72rem;">Zseb: $0.00 (100% tőke)</span>
+            <span class="muted" style="font-size:0.72rem;">Zseb (${100 - pctReinv}%): $${info.pocketProfit.toFixed(2)}</span>
           </div>
           <div class="lvl-chip">
             <span class="muted">Vételi keret</span>
@@ -591,31 +663,29 @@
 
     function renderLivePnlPct(status) {
       const el = document.getElementById("live-pnl-pct");
-      if (!el) return;
-
-      const hasPos = Boolean(status && status.has_position);
-      const pctNum = Number(status && status.profit_pct != null ? status.profit_pct : 0);
-      const usdtNum = Number(status && status.profit_usdt != null ? status.profit_usdt : 0);
-      const pctText = (status && status.pnl_pct_text)
-        ? status.pnl_pct_text
-        : `${pctNum >= 0 ? "+" : ""}${pctNum.toFixed(2)}%`;
+      const ns = getNormalizedStatus(status);
+      if (!el || !ns) return;
 
       el.classList.remove("pnl-pos", "pnl-neg");
 
-      if (!hasPos) {
+      if (!ns.hasPos) {
         el.textContent = "Pillanatnyi PnL: 0.00% ($0.00)";
         return;
       }
 
-      el.textContent = `Pillanatnyi PnL: ${pctText} (${formatSignedUsd(usdtNum)})`;
-      if (pctNum > 0) el.classList.add("pnl-pos");
-      else if (pctNum < 0) el.classList.add("pnl-neg");
+      const pctText = `${ns.profitPct >= 0 ? "+" : ""}${ns.profitPct.toFixed(2)}%`;
+      el.textContent = `Pillanatnyi PnL: ${pctText} (${formatSignedUsd(ns.profitUsdt)})`;
+      if (ns.profitPct > 0) el.classList.add("pnl-pos");
+      else if (ns.profitPct < 0) el.classList.add("pnl-neg");
     }
 
     function renderRealizedPnl(status, history) {
       const now = new Date();
-      const todayStr = now.toISOString().slice(0, 10);
-      document.getElementById("realized-date").textContent = `Nap: ${todayStr} (UTC)`;
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const dd = String(now.getDate()).padStart(2, "0");
+      const todayStr = `${yyyy}-${mm}-${dd}`;
+      document.getElementById("realized-date").textContent = `Nap: ${todayStr}`;
 
       let daily = 0;
       let weekly = 0;
@@ -649,10 +719,11 @@
     }
 
     function syncSimulatorDefaults(s) {
-      if (simTouched || !s) return;
-      if (Number(s.free_crypto) > 0) document.getElementById("sim-qty").value = Number(s.free_crypto).toFixed(4);
-      if (Number(s.entry_price) > 0) document.getElementById("sim-entry").value = Number(s.entry_price).toFixed(2);
-      if (Number(s.price) > 0) document.getElementById("sim-target").value = Number(s.price).toFixed(2);
+      const ns = getNormalizedStatus(s);
+      if (simTouched || !ns) return;
+      if (ns.freeSol > 0) document.getElementById("sim-qty").value = ns.freeSol.toFixed(4);
+      if (ns.entryPrice > 0) document.getElementById("sim-entry").value = ns.entryPrice.toFixed(2);
+      if (ns.price > 0) document.getElementById("sim-target").value = ns.price.toFixed(2);
       updateSimulator();
     }
 
@@ -661,40 +732,37 @@
       latestStatus = s;
       recordLivePrice(s);
 
-      const price = Number(s.price || 0);
-      const totalUsd = Number(s.total_usd || 0);
-      const freeUsdt = Number(s.free_usdt || 0);
-      const freeCrypto = Number(s.free_crypto || 0);
-      const entryPrice = s.entry_price != null ? Number(s.entry_price) : null;
+      const ns = getNormalizedStatus(s);
+      const { prices: pts } = getChartData();
 
-      const pts = getChartPricePoints();
       let pctNum = 0;
       if (pts.length >= 2 && pts[0] > 0) {
         pctNum = ((pts[pts.length - 1] - pts[0]) / pts[0]) * 100;
-      } else if (s.has_position && s.profit_pct != null) {
-        pctNum = Number(s.profit_pct);
+      } else if (ns.hasPos) {
+        pctNum = ns.profitPct;
       }
       const pctLabel = `${pctNum >= 0 ? "+" : ""}${pctNum.toFixed(2)}%`;
 
-      document.getElementById("total-usd").textContent = `$${totalUsd.toFixed(2)}`;
+      document.getElementById("total-usd").textContent = `$${ns.totalUsd.toFixed(2)}`;
       document.getElementById("status-detail").textContent =
-        s.status_detail || `${freeCrypto.toFixed(4)} SOL (${(freeCrypto * price).toFixed(2)} USDT)`;
+        s.status_detail || `${ns.freeSol.toFixed(4)} SOL (${(ns.freeSol * ns.price).toFixed(2)} USDT)`;
 
       const upd = (s.updated_at || "").replace("T", " ").slice(11, 19);
-      document.getElementById("updated-badge").textContent = upd ? `${upd} UTC • ${s.status || ""}` : (s.status || "");
+      const htfTag = s.htf_trend_ok ? "4H:OK" : "4H:NO";
+      document.getElementById("updated-badge").textContent = upd ? `${upd} • ${htfTag}` : htfTag;
 
-      document.getElementById("sol-price").textContent = `$${price.toFixed(2)}`;
+      document.getElementById("sol-price").textContent = `$${ns.price.toFixed(2)}`;
       document.getElementById("entry-price").textContent =
-        entryPrice ? `Bekerülés: $${entryPrice.toFixed(2)}` : "Bekerülés: —";
+        ns.entryPrice > 0 ? `Bekerülés: $${ns.entryPrice.toFixed(2)}` : "Bekerülés: —";
 
-      document.getElementById("free-usdt").textContent = `$${freeUsdt.toFixed(2)}`;
-      document.getElementById("free-sol").textContent = `${freeCrypto.toFixed(4)} SOL`;
+      document.getElementById("free-usdt").textContent = `$${ns.freeUsdt.toFixed(2)}`;
+      document.getElementById("free-sol").textContent = `${ns.freeSol.toFixed(4)} SOL`;
 
       const indText = `MA10: ${s.ma10 ?? "—"} • MA30: ${s.ma30 ?? "—"} • RSI: ${s.rsi ?? "—"} • ADX: ${s.adx ?? "—"}`;
       document.getElementById("indicators-line").textContent = indText;
 
       const rightPriceEl = document.getElementById("overview-chart-price");
-      rightPriceEl.textContent = `$${price.toFixed(2)} (${pctLabel})`;
+      rightPriceEl.textContent = `$${ns.price.toFixed(2)} (${pctLabel})`;
       rightPriceEl.style.color = pctNum >= 0 ? "#22c55e" : "#ef4444";
 
       renderLivePnlPct(s);
@@ -710,7 +778,7 @@
 
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const cssW = canvas.clientWidth || 480;
-      const cssH = canvas.clientHeight || 220;
+      const cssH = canvas.clientHeight || 245;
       if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
         canvas.width = Math.round(cssW * dpr);
         canvas.height = Math.round(cssH * dpr);
@@ -720,7 +788,7 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, cssW, cssH);
 
-      const points = getChartPricePoints();
+      const { prices: points, times } = getChartData();
       if (points.length < 2) {
         ctx.fillStyle = "#94a3b8";
         ctx.font = "12px -apple-system, sans-serif";
@@ -747,11 +815,14 @@
         mmEl.textContent = `${tfNames[currentTimeframe] || ""} • Min: $${Math.min(...points).toFixed(2)} • Max: $${Math.max(...points).toFixed(2)}`;
       }
 
-      const padL = 10, padR = 62, padT = 14, padB = 16;
+      // Alsó sávnak extra hely (padB = 28) a dátum/idő címkékhez
+      const padL = 10, padR = 62, padT = 14, padB = 28;
       const plotW = Math.max(cssW - padL - padR, 40);
       const plotH = Math.max(cssH - padT - padB, 40);
+      const toX = (idx) => padL + (idx / (points.length - 1)) * plotW;
       const toY = (val) => padT + (1 - (val - minP) / span) * plotH;
 
+      // Vízszintes rács + Y-tengely (árfolyam)
       ctx.font = "10px -apple-system, sans-serif";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
@@ -766,8 +837,35 @@
         ctx.lineTo(padL + plotW, y);
         ctx.stroke();
 
-        ctx.fillStyle = "#64748b";
+        ctx.fillStyle = "#94a3b8";
         ctx.fillText(`$${val.toFixed(2)}`, padL + plotW + 6, y);
+      }
+
+      // Alsó sáv: X-tengely (dátum / idő)
+      if (times.length === points.length) {
+        const tickCount = 4; // 5 felirat összesen (0%, 25%, 50%, 75%, 100%)
+        ctx.fillStyle = "#94a3b8";
+        ctx.font = "10px -apple-system, sans-serif";
+        ctx.textBaseline = "top";
+        for (let t = 0; t <= tickCount; t++) {
+          const idx = Math.round((t / tickCount) * (points.length - 1));
+          const lbl = times[idx] || "";
+          if (!lbl) continue;
+          const x = toX(idx);
+
+          // Halvány függőleges jelölővonal
+          ctx.strokeStyle = "rgba(148, 163, 184, 0.06)";
+          ctx.beginPath();
+          ctx.moveTo(x, padT);
+          ctx.lineTo(x, padT + plotH);
+          ctx.stroke();
+
+          if (t === 0) ctx.textAlign = "left";
+          else if (t === tickCount) ctx.textAlign = "right";
+          else ctx.textAlign = "center";
+
+          ctx.fillText(lbl, x, padT + plotH + 8);
+        }
       }
 
       function drawLevelLine(val, color) {
@@ -801,7 +899,7 @@
 
       ctx.beginPath();
       points.forEach((px, idx) => {
-        const x = padL + (idx / (points.length - 1)) * plotW;
+        const x = toX(idx);
         const y = toY(px);
         if (idx === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
@@ -814,7 +912,7 @@
 
       ctx.beginPath();
       points.forEach((px, idx) => {
-        const x = padL + (idx / (points.length - 1)) * plotW;
+        const x = toX(idx);
         const y = toY(px);
         if (idx === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
@@ -823,6 +921,58 @@
       ctx.lineWidth = 2.2;
       ctx.stroke();
 
+      // Vétel (BUY) és Eladás (SELL) kis négyzet jelölők a trendvonalon
+      const tradesSource = (latestStatus && Array.isArray(latestStatus.chart_trades) && latestStatus.chart_trades.length)
+        ? latestStatus.chart_trades
+        : latestHistory;
+
+      if (times.length === points.length && tradesSource.length > 0) {
+        const timeMins = times.map(parseLabelToMinutes);
+        const validMins = timeMins.filter((m) => m !== null);
+        if (validMins.length >= 2) {
+          const minT = Math.min(...validMins);
+          const maxT = Math.max(...validMins);
+
+          for (const tr of tradesSource) {
+            const side = String(tr.side || "").toUpperCase();
+            if (side !== "BUY" && side !== "SELL") continue;
+            const trPrice = Number(tr.price || 0);
+            if (!(trPrice > 0)) continue;
+
+            const trShort = formatShortTime(tr.time);
+            const trMin = parseLabelToMinutes(trShort);
+            if (trMin === null || trMin < minT - 15 || trMin > maxT + 15) continue;
+
+            // Legközelebbi gyertya indexének megkeresése
+            let bestIdx = -1;
+            let bestDiff = Infinity;
+            for (let i = 0; i < timeMins.length; i++) {
+              if (timeMins[i] === null) continue;
+              const d = Math.abs(timeMins[i] - trMin);
+              if (d < bestDiff) {
+                bestDiff = d;
+                bestIdx = i;
+              }
+            }
+
+            if (bestIdx >= 0) {
+              const mx = toX(bestIdx);
+              const my = Math.max(padT + 4, Math.min(padT + plotH - 4, toY(trPrice)));
+              const sq = 8;
+
+              ctx.save();
+              ctx.fillStyle = side === "BUY" ? "#22c55e" : "#ef4444";
+              ctx.strokeStyle = "#ffffff";
+              ctx.lineWidth = 1.4;
+              ctx.fillRect(mx - sq / 2, my - sq / 2, sq, sq);
+              ctx.strokeRect(mx - sq / 2, my - sq / 2, sq, sq);
+              ctx.restore();
+            }
+          }
+        }
+      }
+
+      // Aktuális árfolyam pont a vonal végén
       const lastY = toY(points[points.length - 1]);
       ctx.fillStyle = "#22c55e";
       ctx.beginPath();
