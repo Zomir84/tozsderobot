@@ -1,6 +1,6 @@
 {
   "symbol": "SOL_USDT",
-  "updated_at": "2026-11-28T09:28:06Z",
+  "updated_at": "2026-11-28T09:30:15Z",
   "status": "LIVE",
   "status_detail": "0.7345 SOL (52.18 USDT)",
   "price": 71.05,
@@ -15,12 +15,13 @@
   "profit_pct": 1.46,
   "profit_usdt": 0.75,
   "pnl_pct_text": "+1.46%",
-  "ma10": 73.17,
-  "ma30": 72.77,
+  "ma10": 73.12,
+  "ma30": 72.72,
   "rsi": 18.3,
-  "adx": 20.1,
+  "adx": 17.7,
   "chart_daily": [
     71.05,
+    71.03,
     71.02,
     71.0,
     71.02,
@@ -115,7 +116,6 @@
     73.46,
     73.46,
     73.6,
-    73.59,
     71.05
   ],
   "chart_weekly": [
