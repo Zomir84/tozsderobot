@@ -1,6 +1,6 @@
 {
   "symbol": "SOL_USDT",
-  "updated_at": "2026-11-28T11:21:53Z",
+  "updated_at": "2026-11-28T11:22:52Z",
   "status": "LIVE",
   "status_detail": "0.7345 SOL (51.94 USDT)",
   "price": 70.72,
@@ -12,6 +12,10 @@
   "highest_price": 71.28,
   "trailing_active": true,
   "stop_loss_pct": 5.0,
+  "stop_loss_price": 66.5285,
+  "atr_trailing_pct": 1.17,
+  "htf_trend_ok": false,
+  "scaled_out": false,
   "profit_pct": 0.99,
   "profit_usdt": 0.51,
   "pnl_pct_text": "+0.99%",
