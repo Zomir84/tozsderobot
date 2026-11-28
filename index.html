@@ -267,7 +267,7 @@
           <span class="leg-item"><i class="leg-sq" style="background:#22c55e;"></i>Vétel (BUY)</span>
           <span class="leg-item"><i class="leg-sq" style="background:#ef4444;"></i>Eladás (SELL)</span>
           <span class="leg-item"><i class="leg-dot" style="background:#60a5fa;"></i>Bekerülés</span>
-          <span class="leg-item"><i class="leg-dot" style="background:#fbbf24;"></i>Trailing start (+1.5%)</span>
+          <span class="leg-item"><i class="leg-dot" style="background:#fbbf24;"></i>Trailing start (+1.0%)</span>
           <span class="leg-item"><i class="leg-dot" style="background:#f97316;"></i>ATR Trailing</span>
           <span class="leg-item"><i class="leg-dot" style="background:#ef4444;"></i>Stop-Loss (-3.5%)</span>
         </div>
@@ -511,7 +511,7 @@
       const price = ns.price || entry;
       const high = Math.max(Number(s.highest_price || entry), price);
       const slPct = Number(s.stop_loss_pct || 3.5);
-      const trailStartPct = 1.5;
+      const trailStartPct = 1.0;
       const trailCbPct = ns.atrCbPct;
 
       const stopLoss = s.stop_loss_price != null ? Number(s.stop_loss_price) : entry * (1 - slPct / 100);
