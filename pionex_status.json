@@ -1,26 +1,26 @@
 {
-  "updated_at": "2026-11-28T16:31:26",
+  "updated_at": "2026-11-28T16:32:33",
   "symbol": "SOL_USDT",
   "live": true,
-  "price": 70.48,
+  "price": 70.55,
   "free_usdt": 0.5193,
   "free_sol": 0.7345,
-  "equity_usdt": 52.28,
+  "equity_usdt": 52.34,
   "entry_price": 70.03,
   "highest_price": 70.99,
   "peak_price": 70.99,
   "trailing_active": true,
   "trailing_stop_price": 70.5641,
-  "pnl_pct": 0.64,
+  "pnl_pct": 0.74,
   "realized_pnl_usdt": 0.0,
   "pocket_usdt": 0.0,
   "reinvest_share": 0.5,
-  "ma10": 70.51,
+  "ma10": 70.52,
   "ma30": 70.79,
-  "rsi": 34.0,
+  "rsi": 35.6,
   "adx": 25.8,
   "atr_cb_pct": 0.6,
-  "vol_ratio": 0.05,
+  "vol_ratio": 0.09,
   "htf_trend_ok": true,
   "chart_daily": [
     72.17,
@@ -118,8 +118,8 @@
     70.58,
     70.68,
     70.61,
-    70.48,
-    70.48
+    70.55,
+    70.55
   ],
   "chart_daily_times": [
     "11.27 16:45",
@@ -218,7 +218,7 @@
     "11.28 16:00",
     "11.28 16:15",
     "11.28 16:30",
-    "11.28 16:31"
+    "11.28 16:32"
   ],
   "chart_weekly": [
     70.64,
@@ -262,8 +262,8 @@
     71.73,
     71.28,
     70.96,
-    70.48,
-    70.48
+    70.55,
+    70.55
   ],
   "chart_weekly_times": [
     "11.21 17:00",
@@ -308,7 +308,7 @@
     "11.28 05:00",
     "11.28 09:00",
     "11.28 13:00",
-    "11.28 16:31"
+    "11.28 16:32"
   ],
   "chart_trades": [
     {
