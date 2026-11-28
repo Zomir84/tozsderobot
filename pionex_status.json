@@ -1,10 +1,10 @@
 {
   "symbol": "SOL_USDT",
-  "updated_at": "2026-11-28T12:06:11Z",
+  "updated_at": "2026-11-28T12:08:24Z",
   "status": "LIVE",
-  "status_detail": "0.7345 SOL (52.22 USDT)",
-  "price": 71.1,
-  "total_usd": 52.74,
+  "status_detail": "0.7345 SOL (52.18 USDT)",
+  "price": 71.04,
+  "total_usd": 52.7,
   "free_usdt": 0.5193,
   "free_crypto": 0.7345,
   "has_position": true,
@@ -16,15 +16,15 @@
   "atr_trailing_pct": 1.53,
   "htf_trend_ok": true,
   "scaled_out": false,
-  "profit_pct": 1.53,
-  "profit_usdt": 0.79,
-  "pnl_pct_text": "+1.53%",
+  "profit_pct": 1.44,
+  "profit_usdt": 0.74,
+  "pnl_pct_text": "+1.44%",
   "ma10": 72.97,
   "ma30": 72.25,
-  "rsi": 41.3,
+  "rsi": 40.9,
   "adx": 13.5,
   "chart_daily": [
-    71.1,
+    71.04,
     70.96,
     70.87,
     70.84,
@@ -120,10 +120,10 @@
     73.17,
     73.07,
     73.05,
-    71.1
+    71.04
   ],
   "chart_weekly": [
-    71.1,
+    71.04,
     70.96,
     71.28,
     71.73,
@@ -165,7 +165,7 @@
     69.48,
     70.31,
     70.64,
-    71.1
+    71.04
   ],
   "start_capital_usd": 55.0,
   "reinvest_share": 0.5,
@@ -173,5 +173,5 @@
   "pocket_profit_usdt": 0.0,
   "next_bet_usdt": 0.51,
   "realized_net_sum": 0.0,
-  "net_vs_start_usd": -2.26
+  "net_vs_start_usd": -2.3
 }
