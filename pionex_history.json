@@ -8,5 +8,15 @@
     "pnl_usdt": 0.0,
     "reason": "Valós Pionex nyitó pozíció",
     "live": true
+  },
+  {
+    "time": "2026-11-28T18:59:56",
+    "side": "SELL",
+    "price": 70.31,
+    "size": 0.73,
+    "usdt": 51.33,
+    "pnl_usdt": 0.2044,
+    "reason": "ATR Trailing ($70.56, csúcs: $70.99)",
+    "live": true
   }
 ]
