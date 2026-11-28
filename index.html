@@ -177,7 +177,6 @@
 </head>
 <body>
   <div class="wrap">
-    <!-- 1. ÁTTEKINTÉS -->
     <section id="view-overview" class="view active">
       <div class="card">
         <div class="top-card-head">
@@ -248,12 +247,11 @@
       </div>
     </section>
 
-    <!-- 2. DIAGRAMOK: KEZDŐTŐKE ($55.00), NYERESÉG / VESZTESÉG ÉS ZSEBBE TEHETŐ NYERESÉG -->
     <section id="view-charts" class="view">
       <div class="card">
         <div class="chart-head">
           <div>
-            <div class="muted">Kezdőtőke ($55.00) és nyereség / veszteség alakulása</div>
+            <div class="muted">Tőkegörbe ($55.00 alap • 100% tőkébe forgatva)</div>
             <div id="capital-pnl-headline" class="med-val">+$0.00 (0.00%)</div>
           </div>
           <div id="capital-minmax" class="muted">Kezdőtőke: $55.00</div>
@@ -268,7 +266,6 @@
       </div>
     </section>
 
-    <!-- 3. KÖTÉSEK -->
     <section id="view-trades" class="view">
       <div class="card">
         <div class="muted">Előzmények és kötések (pionex_history.json)</div>
@@ -278,7 +275,6 @@
       </div>
     </section>
 
-    <!-- 4. SZIMULÁTOR -->
     <section id="view-sim" class="view">
       <div class="card">
         <div class="muted">Pozíció szimulátor (bekerülési ár vs. célár)</div>
@@ -305,9 +301,42 @@
 
   <script>
     const START_CAPITAL_USD = 55.0;
+    const BASE_BET_USD = 15.0;
+    const REINVEST_SHARE = 1.0;
+    const MAX_PLAUSIBLE_TRADE_USD = 500.0;
+    const LIVE_SERIES_KEY = "pionex_sol_live_series_v1";
+
     let latestStatus = null;
     let latestHistory = [];
+    let livePriceSeries = loadLiveSeries();
     let simTouched = false;
+
+    function loadLiveSeries() {
+      try {
+        const raw = sessionStorage.getItem(LIVE_SERIES_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter((p) => p && Number(p.price) > 0) : [];
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function recordLivePrice(status) {
+      if (!status) return;
+      const px = Number(status.price || 0);
+      if (!(px > 0 && px < 10000)) return;
+      const stamp = String(status.updated_at || new Date().toISOString());
+      const last = livePriceSeries[livePriceSeries.length - 1];
+      if (!last || last.time !== stamp) {
+        livePriceSeries.push({ time: stamp, price: px });
+        if (livePriceSeries.length > 120) {
+          livePriceSeries = livePriceSeries.slice(-120);
+        }
+        try {
+          sessionStorage.setItem(LIVE_SERIES_KEY, JSON.stringify(livePriceSeries));
+        } catch (_) {}
+      }
+    }
 
     document.querySelectorAll(".tab-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -326,7 +355,40 @@
       return `${n >= 0 ? "+" : "-"}$${Math.abs(n).toFixed(2)}`;
     }
 
+    function isPlausibleHistoryItem(item) {
+      if (!item || typeof item !== "object") return false;
+      const sz = Math.abs(Number(item.size || 0));
+      const px = Math.abs(Number(item.price || 0));
+      const usdt = Math.abs(Number(item.usdt || 0));
+      const notional = usdt > 0 ? usdt : sz * px;
+      if (notional > MAX_PLAUSIBLE_TRADE_USD) return false;
+      const rawPnl = Math.abs(Number(item.pnl_usdt || 0));
+      if (rawPnl > MAX_PLAUSIBLE_TRADE_USD * 0.5) return false;
+      return true;
+    }
+
+    function sanitizeHistory(history) {
+      if (!Array.isArray(history)) return [];
+      const seen = new Set();
+      const clean = [];
+      for (const item of history) {
+        if (!isPlausibleHistoryItem(item)) continue;
+        const key = [
+          String(item.time || ""),
+          String(item.side || item.status || "").toUpperCase(),
+          Number(item.price || 0).toFixed(4),
+          Number(item.size || item.usdt || 0).toFixed(4),
+          String(item.reason || ""),
+        ].join("|");
+        if (seen.has(key)) continue;
+        seen.add(key);
+        clean.push(item);
+      }
+      return clean;
+    }
+
     function getItemPnlUsd(item) {
+      if (!isPlausibleHistoryItem(item)) return 0;
       const sz = Number(item && item.size ? item.size : 0);
       const sellPx = Number(item && item.price ? item.price : 0);
       const pctMatch = String((item && item.reason) || "").match(/([+-]?\d+(?:[.,]\d+)?)\s*%/);
@@ -335,10 +397,12 @@
         const denom = 1 + pctVal / 100;
         if (denom > 0) {
           const impliedEntry = sellPx / denom;
-          return (sellPx - impliedEntry) * sz;
+          const est = (sellPx - impliedEntry) * sz;
+          if (Math.abs(est) <= MAX_PLAUSIBLE_TRADE_USD * 0.5) return est;
         }
       }
-      return Number(item && item.pnl_usdt != null ? item.pnl_usdt : 0);
+      const direct = Number(item && item.pnl_usdt != null ? item.pnl_usdt : 0);
+      return Math.abs(direct) <= MAX_PLAUSIBLE_TRADE_USD * 0.5 ? direct : 0;
     }
 
     function computeExitLevels(s) {
@@ -370,28 +434,47 @@
       };
     }
 
+    function getChartPricePoints() {
+      if (livePriceSeries.length >= 2) {
+        return livePriceSeries.map((p) => Number(p.price));
+      }
+      const fallback = [];
+      for (const row of latestHistory) {
+        const px = Number(row.price);
+        if (!Number.isNaN(px) && px > 0 && px < 10000) fallback.push(px);
+      }
+      if (latestStatus && Number(latestStatus.price) > 0) {
+        fallback.push(Number(latestStatus.price));
+      }
+      return fallback;
+    }
+
     function computeCapitalCurve(status, history) {
       const currentTotal = status && Number(status.total_usd) > 0 ? Number(status.total_usd) : 0;
-      const rows = Array.isArray(history) ? history : [];
-      const startCapital = START_CAPITAL_USD;
+      const rows = sanitizeHistory(history);
+      const startCapital = status && Number(status.start_capital_usd) > 0 ? Number(status.start_capital_usd) : START_CAPITAL_USD;
 
       const curve = [Number(startCapital.toFixed(2))];
       let runningUsd = startCapital;
+      let positiveRealizedSum = 0;
 
       for (const row of rows) {
-        const side = String(row && row.side || "").toUpperCase();
+        const side = String((row && row.side) || "").toUpperCase();
         if (side === "SELL") {
-          runningUsd += getItemPnlUsd(row);
-          curve.push(Number(Math.max(0, runningUsd).toFixed(2)));
-        } else if (row && row.total_usd != null && Number(row.total_usd) > 0) {
+          const pnl = getItemPnlUsd(row);
+          if (pnl > 0) positiveRealizedSum += pnl;
+          runningUsd = Math.max(0, runningUsd + pnl);
+          curve.push(Number(runningUsd.toFixed(2)));
+        } else if (row && row.total_usd != null && Number(row.total_usd) > 0 && Number(row.total_usd) <= MAX_PLAUSIBLE_TRADE_USD) {
           runningUsd = Number(row.total_usd);
           curve.push(Number(runningUsd.toFixed(2)));
         }
       }
 
       if (currentTotal > 0) {
-        if (curve[curve.length - 1] !== Number(currentTotal.toFixed(2))) {
-          curve.push(Number(currentTotal.toFixed(2)));
+        const roundedCur = Number(currentTotal.toFixed(2));
+        if (curve[curve.length - 1] !== roundedCur) {
+          curve.push(roundedCur);
         }
       }
 
@@ -400,8 +483,16 @@
       const netPct = startCapital > 0 ? (netDiff / startCapital) * 100 : 0;
       const peakTotal = curve.length ? Math.max(...curve) : finalTotal;
       const troughTotal = curve.length ? Math.min(...curve) : finalTotal;
-      const pocketProfit = netDiff > 0 ? netDiff : 0;
-      const remainingAfterPocket = Math.max(0, finalTotal - pocketProfit);
+
+      const reinvestProfit =
+        status && status.reinvested_profit_usdt != null
+          ? Number(status.reinvested_profit_usdt)
+          : positiveRealizedSum * REINVEST_SHARE;
+      const pocketProfit = 0;
+      const nextBet =
+        status && status.next_bet_usdt != null
+          ? Number(status.next_bet_usdt)
+          : BASE_BET_USD + reinvestProfit;
 
       return {
         startCapital,
@@ -410,8 +501,9 @@
         netPct,
         peakTotal,
         troughTotal,
+        reinvestProfit,
         pocketProfit,
-        remainingAfterPocket,
+        nextBet,
         curve,
       };
     }
@@ -432,22 +524,22 @@
       if (boxEl) {
         boxEl.innerHTML = `
           <div class="lvl-chip">
-            <span class="muted">Kezdőtőke</span>
-            <b style="color:#60a5fa;">$${info.startCapital.toFixed(2)}</b>
+            <span class="muted">Tőkébe forgatva (100%)</span>
+            <b style="color:#22c55e;">+$${info.reinvestProfit.toFixed(2)}</b>
+            <span class="muted" style="font-size:0.72rem;">Zseb: $0.00 (100% tőke)</span>
           </div>
           <div class="lvl-chip">
-            <span class="muted">Jelenlegi tőke</span>
-            <b style="color:#f8fafc;">$${info.finalTotal.toFixed(2)}</b>
+            <span class="muted">Vételi keret</span>
+            <b style="color:#60a5fa;">$${info.nextBet.toFixed(2)}</b>
+            <span class="muted" style="font-size:0.72rem;">Alap + forgatott profit</span>
           </div>
           <div class="lvl-chip">
-            <span class="muted">Zsebbe tehető nyereség (saját számlára)</span>
-            <b style="color:${info.pocketProfit > 0 ? "#22c55e" : "#94a3b8"};">+$${info.pocketProfit.toFixed(2)}</b>
-            <span class="muted" style="font-size:0.72rem;">Maradék kivétel után: $${info.remainingAfterPocket.toFixed(2)}</span>
+            <span class="muted">Kezdőtőke / Jelenlegi tőke</span>
+            <b>$${info.startCapital.toFixed(2)} / $${info.finalTotal.toFixed(2)}</b>
           </div>
           <div class="lvl-chip">
-            <span class="muted">Nettó nyereség / veszteség</span>
-            <b style="color:${info.netDiff >= 0 ? "#22c55e" : "#ef4444"};">${formatSignedUsd(info.netDiff)} (${info.netPct >= 0 ? "+" : ""}${info.netPct.toFixed(2)}%)</b>
-            <span class="muted" style="font-size:0.72rem;">Csúcs / mélypont: $${info.peakTotal.toFixed(2)} / $${info.troughTotal.toFixed(2)}</span>
+            <span class="muted">Csúcs / Mélypont</span>
+            <b>$${info.peakTotal.toFixed(2)} / $${info.troughTotal.toFixed(2)}</b>
           </div>
         `;
       }
@@ -479,7 +571,7 @@
     function renderRealizedPnl(status, history) {
       const now = new Date();
       const todayStr = now.toISOString().slice(0, 10);
-      document.getElementById("realized-date").textContent = `Nap: ${todayStr}`;
+      document.getElementById("realized-date").textContent = `Nap: ${todayStr} (UTC)`;
 
       let daily = 0;
       let weekly = 0;
@@ -487,12 +579,12 @@
       const weekAgo = Date.now() - 7 * 86400000;
       const monthAgo = Date.now() - 30 * 86400000;
 
-      for (const item of (history || [])) {
+      for (const item of sanitizeHistory(history)) {
         if (String(item.side || "").toUpperCase() === "SELL") {
           const pnl = getItemPnlUsd(item);
           const ts = Date.parse(item.time || "");
           if (!Number.isNaN(ts)) {
-            if ((item.time || "").slice(0, 10) === todayStr) daily += pnl;
+            if (String(item.time || "").slice(0, 10) === todayStr) daily += pnl;
             if (ts >= weekAgo) weekly += pnl;
             if (ts >= monthAgo) monthly += pnl;
           }
@@ -523,14 +615,30 @@
     function renderStatus(s) {
       if (!s) return;
       latestStatus = s;
+      recordLivePrice(s);
 
       const price = Number(s.price || 0);
       const totalUsd = Number(s.total_usd || 0);
       const freeUsdt = Number(s.free_usdt || 0);
       const freeCrypto = Number(s.free_crypto || 0);
       const entryPrice = s.entry_price != null ? Number(s.entry_price) : null;
-      const pctNum = Number(s.profit_pct != null ? s.profit_pct : 0);
-      const pctText = s.pnl_pct_text || `${pctNum >= 0 ? "+" : ""}${pctNum.toFixed(2)}%`;
+      const hasPos = Boolean(s.has_position && entryPrice > 0);
+
+      let pctNum = Number(s.profit_pct != null ? s.profit_pct : 0);
+      let pctLabel = `${pctNum >= 0 ? "+" : ""}${pctNum.toFixed(2)}%`;
+
+      if (!hasPos) {
+        const pts = getChartPricePoints();
+        if (pts.length >= 2 && pts[0] > 0) {
+          pctNum = ((price - pts[0]) / pts[0]) * 100;
+          pctLabel = `${pctNum >= 0 ? "+" : ""}${pctNum.toFixed(2)}%`;
+        } else {
+          pctNum = 0;
+          pctLabel = "+0.00%";
+        }
+      } else if (s.pnl_pct_text) {
+        pctLabel = s.pnl_pct_text;
+      }
 
       document.getElementById("total-usd").textContent = `$${totalUsd.toFixed(2)}`;
       document.getElementById("status-detail").textContent =
@@ -550,7 +658,7 @@
       document.getElementById("indicators-line").textContent = indText;
 
       const rightPriceEl = document.getElementById("overview-chart-price");
-      rightPriceEl.textContent = `$${price.toFixed(2)} (${pctText})`;
+      rightPriceEl.textContent = `$${price.toFixed(2)} (${pctLabel})`;
       rightPriceEl.style.color = pctNum >= 0 ? "#22c55e" : "#ef4444";
 
       renderLivePnlPct(s);
@@ -576,19 +684,11 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, cssW, cssH);
 
-      const points = [];
-      for (const row of latestHistory) {
-        const px = Number(row.price);
-        if (!Number.isNaN(px) && px > 0) points.push(px);
-      }
-      if (latestStatus && Number(latestStatus.price) > 0) {
-        points.push(Number(latestStatus.price));
-      }
-
+      const points = getChartPricePoints();
       if (points.length < 2) {
         ctx.fillStyle = "#94a3b8";
         ctx.font = "12px -apple-system, sans-serif";
-        ctx.fillText("Nincs elég előzményadat a grafikonhoz.", 14, cssH / 2);
+        ctx.fillText("Élő árfolyam pontok gyűjtése folyamatban...", 14, cssH / 2);
         return;
       }
 
@@ -600,7 +700,7 @@
 
       const rawMin = Math.min(...scaleValues);
       const rawMax = Math.max(...scaleValues);
-      const padVal = Math.max((rawMax - rawMin) * 0.12, 0.25);
+      const padVal = Math.max((rawMax - rawMin) * 0.16, 0.08);
       const minP = rawMin - padVal;
       const maxP = rawMax + padVal;
       const span = Math.max(maxP - minP, 0.01);
@@ -652,6 +752,27 @@
         drawLevelLine(lv.stopLoss, "#ef4444");
       }
 
+      const firstX = padL;
+      const lastX = padL + plotW;
+      const bottomY = padT + plotH;
+
+      const grad = ctx.createLinearGradient(0, padT, 0, bottomY);
+      grad.addColorStop(0, "rgba(34, 197, 94, 0.24)");
+      grad.addColorStop(1, "rgba(34, 197, 94, 0.0)");
+
+      ctx.beginPath();
+      points.forEach((px, idx) => {
+        const x = padL + (idx / (points.length - 1)) * plotW;
+        const y = toY(px);
+        if (idx === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.lineTo(lastX, bottomY);
+      ctx.lineTo(firstX, bottomY);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+
       ctx.beginPath();
       points.forEach((px, idx) => {
         const x = padL + (idx / (points.length - 1)) * plotW;
@@ -663,11 +784,10 @@
       ctx.lineWidth = 2.2;
       ctx.stroke();
 
-      const lastX = padL + plotW;
       const lastY = toY(points[points.length - 1]);
       ctx.fillStyle = "#22c55e";
       ctx.beginPath();
-      ctx.arc(lastX, lastY, 3.5, 0, Math.PI * 2);
+      ctx.arc(lastX, lastY, 3.6, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -772,7 +892,7 @@
     }
 
     function renderTrades(history) {
-      latestHistory = Array.isArray(history) ? history : [];
+      latestHistory = sanitizeHistory(history);
       renderRealizedPnl(latestStatus, latestHistory);
       renderCapitalView(latestStatus, latestHistory);
       drawCharts();
@@ -781,7 +901,7 @@
       if (!container) return;
 
       if (!latestHistory.length) {
-        container.innerHTML = `<div class="muted" style="margin-top:8px;">Nincs bejegyzés a naplóban.</div>`;
+        container.innerHTML = `<div class="muted" style="margin-top:8px;">Nincs érvényes bejegyzés a naplóban.</div>`;
         return;
       }
 
@@ -882,7 +1002,7 @@
 
     updateSimulator();
     loadAll();
-    setInterval(loadAll, 30000);
+    setInterval(loadAll, 5000);
   </script>
 </body>
 </html>
