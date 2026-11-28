@@ -80,5 +80,16 @@
     "reason": "TRAILING_STOP (2.40%)",
     "order_id": "solbot_1795817077827",
     "simulated": false
+  },
+  {
+    "time": "2026-11-28T02:36:01.645660+00:00",
+    "side": "SELL",
+    "price": 70.6644,
+    "size": 0.734455,
+    "usdt": 51.9,
+    "pnl_usdt": 0.47,
+    "reason": "TRAILING_STOP (2.34%)",
+    "order_id": "solbot_1795833362435",
+    "simulated": false
   }
 ]
