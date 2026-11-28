@@ -1,6 +1,6 @@
 {
   "symbol": "SOL_USDT",
-  "updated_at": "2026-11-28T09:49:35Z",
+  "updated_at": "2026-11-28T09:51:44Z",
   "status": "LIVE",
   "status_detail": "0.7345 SOL (52.12 USDT)",
   "price": 70.97,
@@ -119,7 +119,7 @@
     70.97
   ],
   "chart_weekly": [
-    70.98,
+    70.97,
     71.28,
     71.73,
     71.65,
