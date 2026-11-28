@@ -80,6 +80,29 @@
     }
     .chart-title { font-size: 1rem; font-weight: 700; color: #f8fafc; }
     .chart-right { font-size: 0.95rem; font-weight: 700; color: #22c55e; }
+    .tf-bar {
+      display: inline-flex;
+      gap: 6px;
+      margin-top: 10px;
+      background: #0d121e;
+      padding: 4px;
+      border-radius: 12px;
+      border: 1px solid rgba(148, 163, 184, 0.12);
+    }
+    .tf-btn {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      padding: 5px 12px;
+      border-radius: 8px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .tf-btn.active {
+      background: rgba(96, 165, 250, 0.2);
+      color: #60a5fa;
+    }
     canvas {
       width: 100%;
       height: 230px;
@@ -232,6 +255,11 @@
           <div class="chart-title">SOL árfolyam és kilépési szintek</div>
           <div id="overview-chart-price" class="chart-right">$0.00 (+0.00%)</div>
         </div>
+        <div class="tf-bar">
+          <button type="button" class="tf-btn active" data-tf="daily">Napi (24ó)</button>
+          <button type="button" class="tf-btn" data-tf="weekly">Heti (7n)</button>
+          <button type="button" class="tf-btn" data-tf="live">Élő</button>
+        </div>
         <canvas id="overviewChart"></canvas>
         <div class="legend">
           <span class="leg-item"><i class="leg-dot" style="background:#22c55e;"></i>Árfolyam</span>
@@ -309,6 +337,7 @@
     let latestStatus = null;
     let latestHistory = [];
     let livePriceSeries = loadLiveSeries();
+    let currentTimeframe = "daily";
     let simTouched = false;
 
     function loadLiveSeries() {
@@ -337,6 +366,15 @@
         } catch (_) {}
       }
     }
+
+    document.querySelectorAll(".tf-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        currentTimeframe = btn.getAttribute("data-tf") || "daily";
+        document.querySelectorAll(".tf-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        if (latestStatus) renderStatus(latestStatus);
+      });
+    });
 
     document.querySelectorAll(".tab-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -435,6 +473,12 @@
     }
 
     function getChartPricePoints() {
+      if (currentTimeframe === "daily" && latestStatus && Array.isArray(latestStatus.chart_daily) && latestStatus.chart_daily.length >= 2) {
+        return latestStatus.chart_daily.map((v) => Number(v)).filter((v) => v > 0);
+      }
+      if (currentTimeframe === "weekly" && latestStatus && Array.isArray(latestStatus.chart_weekly) && latestStatus.chart_weekly.length >= 2) {
+        return latestStatus.chart_weekly.map((v) => Number(v)).filter((v) => v > 0);
+      }
       if (livePriceSeries.length >= 2) {
         return livePriceSeries.map((p) => Number(p.price));
       }
@@ -622,23 +666,15 @@
       const freeUsdt = Number(s.free_usdt || 0);
       const freeCrypto = Number(s.free_crypto || 0);
       const entryPrice = s.entry_price != null ? Number(s.entry_price) : null;
-      const hasPos = Boolean(s.has_position && entryPrice > 0);
 
-      let pctNum = Number(s.profit_pct != null ? s.profit_pct : 0);
-      let pctLabel = `${pctNum >= 0 ? "+" : ""}${pctNum.toFixed(2)}%`;
-
-      if (!hasPos) {
-        const pts = getChartPricePoints();
-        if (pts.length >= 2 && pts[0] > 0) {
-          pctNum = ((price - pts[0]) / pts[0]) * 100;
-          pctLabel = `${pctNum >= 0 ? "+" : ""}${pctNum.toFixed(2)}%`;
-        } else {
-          pctNum = 0;
-          pctLabel = "+0.00%";
-        }
-      } else if (s.pnl_pct_text) {
-        pctLabel = s.pnl_pct_text;
+      const pts = getChartPricePoints();
+      let pctNum = 0;
+      if (pts.length >= 2 && pts[0] > 0) {
+        pctNum = ((pts[pts.length - 1] - pts[0]) / pts[0]) * 100;
+      } else if (s.has_position && s.profit_pct != null) {
+        pctNum = Number(s.profit_pct);
       }
+      const pctLabel = `${pctNum >= 0 ? "+" : ""}${pctNum.toFixed(2)}%`;
 
       document.getElementById("total-usd").textContent = `$${totalUsd.toFixed(2)}`;
       document.getElementById("status-detail").textContent =
@@ -688,7 +724,7 @@
       if (points.length < 2) {
         ctx.fillStyle = "#94a3b8";
         ctx.font = "12px -apple-system, sans-serif";
-        ctx.fillText("Élő árfolyam pontok gyűjtése folyamatban...", 14, cssH / 2);
+        ctx.fillText("Árfolyam adatok betöltése folyamatban...", 14, cssH / 2);
         return;
       }
 
@@ -700,13 +736,16 @@
 
       const rawMin = Math.min(...scaleValues);
       const rawMax = Math.max(...scaleValues);
-      const padVal = Math.max((rawMax - rawMin) * 0.16, 0.08);
+      const padVal = Math.max((rawMax - rawMin) * 0.14, 0.08);
       const minP = rawMin - padVal;
       const maxP = rawMax + padVal;
       const span = Math.max(maxP - minP, 0.01);
 
+      const tfNames = { daily: "24 óra", weekly: "7 nap", live: "Élő" };
       const mmEl = document.getElementById("overview-minmax");
-      if (mmEl) mmEl.textContent = `Min: $${Math.min(...points).toFixed(2)} • Max: $${Math.max(...points).toFixed(2)}`;
+      if (mmEl) {
+        mmEl.textContent = `${tfNames[currentTimeframe] || ""} • Min: $${Math.min(...points).toFixed(2)} • Max: $${Math.max(...points).toFixed(2)}`;
+      }
 
       const padL = 10, padR = 62, padT = 14, padB = 16;
       const plotW = Math.max(cssW - padL - padR, 40);
