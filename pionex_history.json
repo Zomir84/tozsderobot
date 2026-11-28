@@ -1,95 +1,12 @@
 [
   {
-    "time": "2026-11-26T03:42:31.921341+00:00",
-    "total_usd": 52.89,
-    "price": 71.06,
-    "status": "TARTÁS"
-  },
-  {
-    "time": "2026-11-26T04:37:52.981102+00:00",
-    "total_usd": 52.99,
-    "price": 71.2,
-    "status": "TARTÁS"
-  },
-  {
-    "time": "2026-11-26T05:36:58.243167+00:00",
-    "total_usd": 53.06,
-    "price": 71.29,
-    "status": "TARTÁS"
-  },
-  {
-    "time": "2026-11-26T07:01:40.872127+00:00",
-    "total_usd": 52.67,
-    "price": 70.77,
-    "status": "TARTÁS"
-  },
-  {
-    "time": "2026-11-26T08:55:26.266126+00:00",
-    "total_usd": 52.93,
-    "price": 71.12,
-    "status": "TARTÁS"
-  },
-  {
-    "time": "2026-11-26T09:51:05.724804+00:00",
-    "total_usd": 52.93,
-    "price": 71.12,
-    "status": "TARTÁS"
-  },
-  {
-    "time": "2026-11-26T11:01:44.939965+00:00",
-    "total_usd": 52.48,
-    "price": 70.51,
-    "status": "TARTÁS"
-  },
-  {
-    "time": "2026-11-26T11:57:01.785034+00:00",
-    "total_usd": 52.76,
-    "price": 70.89,
-    "status": "TARTÁS"
-  },
-  {
-    "time": "2026-11-26T13:21:47.408001+00:00",
-    "total_usd": 52.87,
-    "price": 71.03,
-    "status": "TARTÁS"
-  },
-  {
-    "time": "2026-11-26T15:20:29.240443+00:00",
-    "total_usd": 52.25,
-    "price": 70.44,
-    "status": "TARTÁS"
-  },
-  {
-    "time": "2026-11-27T11:14:54.258173+00:00",
-    "side": "SELL",
-    "price": 70.6644,
-    "size": 0.7345,
-    "usdt": 51.9,
-    "pnl_usdt": 15.74,
-    "reason": "TRAILING_STOP (4.61%)",
-    "order_id": "solbot_1795778095437",
-    "simulated": false
-  },
-  {
-    "time": "2026-11-27T22:04:36.982412+00:00",
-    "side": "SELL",
-    "price": 70.6644,
-    "size": 0.734455,
-    "usdt": 51.9,
-    "pnl_usdt": 0.47,
-    "reason": "TRAILING_STOP (2.40%)",
-    "order_id": "solbot_1795817077827",
-    "simulated": false
-  },
-  {
-    "time": "2026-11-28T02:36:01.645660+00:00",
-    "side": "SELL",
-    "price": 70.6644,
-    "size": 0.734455,
-    "usdt": 51.9,
-    "pnl_usdt": 0.47,
-    "reason": "TRAILING_STOP (2.34%)",
-    "order_id": "solbot_1795833362435",
-    "simulated": false
+    "time": "2026-11-26T16:09:31Z",
+    "side": "BUY",
+    "price": 70.03,
+    "size": 0.728,
+    "usdt": 50.98,
+    "pnl_usdt": 0.0,
+    "reason": "Valós Pionex nyitó pozíció",
+    "live": true
   }
 ]
